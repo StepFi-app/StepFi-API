@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -19,11 +19,14 @@ import { BlockchainIndexerModule } from './jobs/blockchain-indexer/blockchain-in
 import { LoanPaymentReminderModule } from './jobs/loan-payment-reminder/loan-payment-reminder.module';
 import { TransactionStatusCheckerModule } from './jobs/transaction-status-checker/transaction-status-checker.module';
 import { NonceCleanupModule } from './jobs/nonce-cleanup/nonce-cleanup.module';
+import { LoggerModule } from './common/logger/logger.module';
+import { MetricsModule } from './modules/metrics/metrics.module';
+import { CorrelationIdMiddleware } from './common/logger/correlation-id.middleware';
 
 @Module({
   imports: [
-    // ConfigModule must be first — SupabaseService and other providers depend on it
     ConfigModule.forRoot({ isGlobal: true }),
+    LoggerModule,
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
@@ -41,6 +44,7 @@ import { NonceCleanupModule } from './jobs/nonce-cleanup/nonce-cleanup.module';
     }),
     AuthModule,
     HealthModule,
+    MetricsModule,
     LoansModule,
     ReputationModule,
     UsersModule,
@@ -64,4 +68,8 @@ import { NonceCleanupModule } from './jobs/nonce-cleanup/nonce-cleanup.module';
     },
   ],
 })
-export class AppModule { }
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(CorrelationIdMiddleware).forRoutes('*');
+  }
+}

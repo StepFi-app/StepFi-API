@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { redisStore } from 'cache-manager-redis-store';
+import pino from 'pino';
 
 /**
  * Configuration factory for the StepFi API Cache layer.
@@ -31,7 +32,7 @@ export const getRedisConfig = async (configService: ConfigService): Promise<any>
       ttl,
     };
   } catch (error) {
-    console.warn('Failed to initialize Redis store, falling back to in-memory cache:', error.message);
+    pino().warn({ error: error.message }, 'Failed to initialize Redis store, falling back to in-memory cache');
     return {
       ttl,
     };

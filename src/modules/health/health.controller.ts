@@ -8,10 +8,12 @@ export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Health check' })
-  @ApiResponse({ status: 200, description: 'Service is healthy' })
+  @ApiOperation({ summary: 'Comprehensive health check' })
+  @ApiResponse({ status: 200, description: 'All systems healthy' })
+  @ApiResponse({ status: 503, description: 'One or more systems degraded' })
   async check() {
-    return this.healthService.check();
+    const result = await this.healthService.check();
+    return result;
   }
 
   @Get('db')
@@ -19,7 +21,6 @@ export class HealthController {
   @ApiResponse({ status: 200, description: 'Database is connected' })
   @ApiResponse({ status: 503, description: 'Database connection failed' })
   async checkDatabase() {
-    return this.healthService.checkDatabase();
+    return this.healthService.checkDatabaseMinimal();
   }
 }
-
