@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { ReputationController } from '../../../../src/modules/reputation/reputation.controller';
 import { ReputationService } from '../../../../src/modules/reputation/reputation.service';
 
@@ -99,9 +99,28 @@ describe('ReputationController', () => {
   // GET /reputation/me
   // ---------------------------------------------------------------------------
   describe('getMyScore', () => {
-    it('should throw UnauthorizedException since auth guard is not yet wired', async () => {
-      await expect(controller.getMyScore({})).rejects.toThrow(
-        UnauthorizedException,
+    it('should return reputation data for the authenticated user', async () => {
+      mockReputationService.getReputationScore.mockResolvedValue(mockReputationResponse);
+
+      const req = { user: { wallet: validWallet } };
+      const result = await controller.getMyScore(req);
+
+      expect(result).toEqual({
+        success: true,
+        data: mockReputationResponse,
+        message: 'Your reputation data retrieved successfully',
+      });
+      expect(reputationService.getReputationScore).toHaveBeenCalledWith(validWallet);
+    });
+
+    it('should propagate service errors to the caller', async () => {
+      mockReputationService.getReputationScore.mockRejectedValue(
+        new Error('Contract read failed'),
+      );
+
+      const req = { user: { wallet: validWallet } };
+      await expect(controller.getMyScore(req)).rejects.toThrow(
+        'Contract read failed',
       );
     });
   });
