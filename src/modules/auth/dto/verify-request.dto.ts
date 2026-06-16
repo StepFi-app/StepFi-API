@@ -43,7 +43,7 @@ export class VerifyRequestDto {
   @IsString()
   @IsNotEmpty({ message: 'Signature is required' })
   signature: string;
-}
+
   @ApiProperty({
     description: "Signature type — 'raw' for raw Ed25519 or 'sep0043' for browser wallets",
     example: 'raw',
@@ -54,3 +54,4 @@ export class VerifyRequestDto {
   @IsString()
   @IsIn(['raw', 'sep0043'])
   signatureType?: 'raw' | 'sep0043' = 'raw';
+}
