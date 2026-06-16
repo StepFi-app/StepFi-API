@@ -9,7 +9,7 @@ import {
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { SupabaseService } from '../../database/supabase.client';
-import { LiquidityContractClient } from '../../blockchain/contracts/liquidity-contract.client';
+import { LiquidityPoolContractClient } from '../../stellar/contracts/clients/liquidity-pool.client';
 import { InvestmentSummaryResponseDto } from './dto/investment-summary-response.dto';
 import { LiquidityWithdrawRequestDto } from './dto/liquidity-withdraw-request.dto';
 import { LiquidityWithdrawResponseDto } from './dto/liquidity-withdraw-response.dto';
@@ -30,7 +30,7 @@ export class LiquidityService {
   constructor(
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
     private readonly supabaseService: SupabaseService,
-    private readonly liquidityClient: LiquidityContractClient,
+    private readonly liquidityClient: LiquidityPoolContractClient,
   ) {}
 
   async getInvestmentSummary(wallet: string): Promise<InvestmentSummaryResponseDto> {

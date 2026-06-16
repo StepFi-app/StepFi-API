@@ -8,8 +8,8 @@ import {
 } from '@nestjs/common';
 import { ReputationService } from '../reputation/reputation.service';
 import { SupabaseService } from '../../database/supabase.client';
-import { CreditLineContractClient } from '../../blockchain/contracts/credit-line-contract.client';
-import { ReputationContractClient } from '../../blockchain/contracts/reputation-contract.client';
+import { CreditLineContractClient } from '../../stellar/contracts/clients/creditline.client';
+import { ReputationContractClient } from '../../stellar/contracts/clients/reputation.client';
 import { LoanQuoteRequestDto } from './dto/loan-quote-request.dto';
 import { LoanQuoteResponseDto, SchedulePaymentDto } from './dto/loan-quote-response.dto';
 import { CreateLoanRequestDto } from './dto/create-loan-request.dto';

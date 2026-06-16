@@ -3,7 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { ReputationModule } from '../../../../src/modules/reputation/reputation.module';
-import { ReputationContractClient } from '../../../../src/blockchain/contracts/reputation-contract.client';
+import { ReputationContractClient } from '../../../../src/stellar/contracts/clients/reputation.client';
 import { SorobanService } from '../../../../src/blockchain/soroban/soroban.service';
 
 describe('ReputationController (e2e)', () => {

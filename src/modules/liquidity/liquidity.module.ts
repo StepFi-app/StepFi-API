@@ -6,13 +6,13 @@ import { LiquidityController } from './liquidity.controller';
 import { LiquidityService } from './liquidity.service';
 import { AuthModule } from '../auth/auth.module';
 import { SupabaseService } from '../../database/supabase.client';
-import { SorobanService } from '../../blockchain/soroban/soroban.service';
-import { LiquidityContractClient } from '../../blockchain/contracts/liquidity-contract.client';
+import { StellarModule } from '../../stellar/stellar.module';
 
 @Module({
   imports: [
     ConfigModule,
     AuthModule,
+    StellarModule,
     CacheModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -23,7 +23,7 @@ import { LiquidityContractClient } from '../../blockchain/contracts/liquidity-co
     }),
   ],
   controllers: [LiquidityController],
-  providers: [LiquidityService, SupabaseService, SorobanService, LiquidityContractClient],
+  providers: [LiquidityService, SupabaseService],
   exports: [LiquidityService],
 })
 export class LiquidityModule {}

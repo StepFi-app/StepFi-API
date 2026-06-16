@@ -5,19 +5,14 @@ import { LoansService } from './loans.service';
 import { AuthModule } from '../auth/auth.module';
 import { ReputationModule } from '../reputation/reputation.module';
 import { SupabaseService } from '../../database/supabase.client';
-import { SorobanService } from '../../blockchain/soroban/soroban.service';
-import { CreditLineContractClient } from '../../blockchain/contracts/credit-line-contract.client';
-import { ReputationContractClient } from '../../blockchain/contracts/reputation-contract.client';
+import { StellarModule } from '../../stellar/stellar.module';
 
 @Module({
-  imports: [ConfigModule, AuthModule, ReputationModule],
+  imports: [ConfigModule, AuthModule, ReputationModule, StellarModule],
   controllers: [LoansController],
   providers: [
     LoansService,
     SupabaseService,
-    SorobanService,
-    CreditLineContractClient,
-    ReputationContractClient,
   ],
   exports: [LoansService],
 })

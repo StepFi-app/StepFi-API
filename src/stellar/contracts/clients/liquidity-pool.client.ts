@@ -1,23 +1,21 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from 'stellar-sdk';
-import { SorobanService } from '../soroban/soroban.service';
+import { SorobanService } from '../../../blockchain/soroban/soroban.service';
+import { PoolStats, LIQUIDITY_POOL_CONTRACT_ID_KEY } from '../interfaces/liquidity-pool.interface';
+import {
+  ContractNotConfiguredError,
+  ContractSimulationError,
+  ContractReadError,
+  ContractTxBuildError,
+} from '../errors';
 
 const STROOPS = 10_000_000n;
 const SHARE_PRICE_BPS = 10_000n;
 
-export interface PoolStats {
-  totalLiquidity: bigint;
-  lockedLiquidity: bigint;
-  availableLiquidity: bigint;
-  totalShares: bigint;
-  sharePrice: bigint;
-  withdrawalFeeBps: bigint;
-}
-
 @Injectable()
-export class LiquidityContractClient {
-  private readonly logger = new Logger(LiquidityContractClient.name);
+export class LiquidityPoolContractClient {
+  private readonly logger = new Logger(LiquidityPoolContractClient.name);
   private readonly contractId: string;
 
   constructor(
@@ -25,14 +23,14 @@ export class LiquidityContractClient {
     private readonly configService: ConfigService,
   ) {
     this.contractId =
-      this.configService.get<string>('LIQUIDITY_POOL_CONTRACT_ID') ||
+      this.configService.get<string>(LIQUIDITY_POOL_CONTRACT_ID_KEY) ||
       this.configService.get<string>('LIQUIDITY_CONTRACT_ID') ||
       '';
 
     if (this.contractId) {
-      this.logger.log(`Liquidity contract loaded: ${this.contractId.slice(0, 8)}...`);
+      this.logger.log(`LiquidityPool contract loaded: ${this.contractId.slice(0, 8)}...`);
     } else {
-      this.logger.warn('LIQUIDITY_POOL_CONTRACT_ID is not set - liquidity contract calls will fail');
+      this.logger.warn(`${LIQUIDITY_POOL_CONTRACT_ID_KEY} is not set - contract calls will fail`);
     }
   }
 
@@ -126,11 +124,7 @@ export class LiquidityContractClient {
     const sharesArg = StellarSdk.nativeToScVal(sharesInStroops, { type: 'i128' });
 
     try {
-      return await this.readBigInt(
-        ['calculate_withdrawal'],
-        [sharesArg],
-        'withdrawal preview',
-      );
+      return await this.readBigInt(['calculate_withdrawal'], [sharesArg], 'withdrawal preview');
     } catch (error) {
       this.logger.warn(`calculate_withdrawal unavailable, falling back to share-price math: ${error.message}`);
       const stats = await this.getPoolStats();
@@ -156,7 +150,6 @@ export class LiquidityContractClient {
       this.logger.warn(`calculate_deposit unavailable, falling back to share-price math: ${error.message}`);
       const stats = await this.getPoolStats();
       if (stats.totalShares <= 0n || stats.totalLiquidity <= 0n) {
-        // First deposit: 1:1 ratio
         return amountInStroops;
       }
       return (amountInStroops * stats.totalShares) / stats.totalLiquidity;
@@ -194,10 +187,7 @@ export class LiquidityContractClient {
           (simulation as StellarSdk.SorobanRpc.Api.SimulateTransactionErrorResponse).error ||
           'Unknown simulation error';
         this.logger.error(`deposit simulation failed: ${errorMsg}`);
-        throw new ServiceUnavailableException({
-          code: 'BLOCKCHAIN_SIMULATION_FAILED',
-          message: 'Failed to simulate liquidity deposit transaction. Please try again later.',
-        });
+        throw new ContractSimulationError('deposit');
       }
 
       const assembledTx = StellarSdk.SorobanRpc.assembleTransaction(
@@ -207,15 +197,14 @@ export class LiquidityContractClient {
 
       return assembledTx.toXDR();
     } catch (error) {
-      if (error instanceof ServiceUnavailableException) {
+      if (
+        error instanceof ContractNotConfiguredError ||
+        error instanceof ContractSimulationError
+      ) {
         throw error;
       }
-
       this.logger.error(`Failed to build deposit transaction: ${error.message}`);
-      throw new ServiceUnavailableException({
-        code: 'BLOCKCHAIN_TX_BUILD_FAILED',
-        message: 'Failed to construct liquidity deposit transaction. Please try again later.',
-      });
+      throw new ContractTxBuildError('deposit');
     }
   }
 
@@ -250,10 +239,7 @@ export class LiquidityContractClient {
           (simulation as StellarSdk.SorobanRpc.Api.SimulateTransactionErrorResponse).error ||
           'Unknown simulation error';
         this.logger.error(`withdraw simulation failed: ${errorMsg}`);
-        throw new ServiceUnavailableException({
-          code: 'BLOCKCHAIN_SIMULATION_FAILED',
-          message: 'Failed to simulate liquidity withdrawal transaction. Please try again later.',
-        });
+        throw new ContractSimulationError('withdraw');
       }
 
       const assembledTx = StellarSdk.SorobanRpc.assembleTransaction(
@@ -263,15 +249,14 @@ export class LiquidityContractClient {
 
       return assembledTx.toXDR();
     } catch (error) {
-      if (error instanceof ServiceUnavailableException) {
+      if (
+        error instanceof ContractNotConfiguredError ||
+        error instanceof ContractSimulationError
+      ) {
         throw error;
       }
-
       this.logger.error(`Failed to build withdraw transaction: ${error.message}`);
-      throw new ServiceUnavailableException({
-        code: 'BLOCKCHAIN_TX_BUILD_FAILED',
-        message: 'Failed to construct liquidity withdrawal transaction. Please try again later.',
-      });
+      throw new ContractTxBuildError('withdraw');
     }
   }
 
@@ -310,19 +295,13 @@ export class LiquidityContractClient {
       }
     }
 
-    this.logger.error(`Failed to read ${label} from liquidity contract`, lastError as Error);
-    throw new ServiceUnavailableException({
-      code: 'BLOCKCHAIN_CONTRACT_READ_FAILED',
-      message: `Failed to read ${label} from the liquidity pool contract. Please try again later.`,
-    });
+    this.logger.error(`Failed to read ${label} from liquidity pool contract`, lastError as Error);
+    throw new ContractReadError(label);
   }
 
   private ensureConfigured(): void {
     if (!this.contractId) {
-      throw new ServiceUnavailableException({
-        code: 'BLOCKCHAIN_CONTRACT_NOT_CONFIGURED',
-        message: 'Liquidity pool contract is not configured. Please contact support.',
-      });
+      throw new ContractNotConfiguredError('Liquidity pool contract');
     }
   }
 

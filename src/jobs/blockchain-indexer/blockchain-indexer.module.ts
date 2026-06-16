@@ -5,11 +5,12 @@ import { BlockchainIndexerService } from './blockchain-indexer.service';
 import { BlockchainIndexerProcessor } from './blockchain-indexer.processor';
 import { EventParserService } from './event-parser.service';
 import { SupabaseService } from '../../database/supabase.client';
-import { SorobanService } from '../../blockchain/soroban/soroban.service';
+import { StellarModule } from '../../stellar/stellar.module';
 
 @Module({
   imports: [
     ConfigModule,
+    StellarModule,
     BullModule.registerQueue({ name: 'blockchain-indexer' }),
   ],
   providers: [
@@ -17,7 +18,6 @@ import { SorobanService } from '../../blockchain/soroban/soroban.service';
     BlockchainIndexerProcessor,
     EventParserService,
     SupabaseService,
-    SorobanService,
   ],
 })
 export class BlockchainIndexerModule {}

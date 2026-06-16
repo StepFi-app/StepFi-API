@@ -8,12 +8,16 @@ import {
 import { LoansService } from '../../../../src/modules/loans/loans.service';
 import { ReputationService } from '../../../../src/modules/reputation/reputation.service';
 import { SupabaseService } from '../../../../src/database/supabase.client';
-import { CreditLineContractClient } from '../../../../src/blockchain/contracts/credit-line-contract.client';
-import { ReputationContractClient } from '../../../../src/blockchain/contracts/reputation-contract.client';
+import { CreditLineContractClient } from '../../../../src/stellar/contracts/clients/creditline.client';
+import { ReputationContractClient } from '../../../../src/stellar/contracts/clients/reputation.client';
+import { MockCreditLineContractClient } from '../../../../src/stellar/contracts/mocks/creditline.mock';
+import { MockReputationContractClient } from '../../../../src/stellar/contracts/mocks/reputation.mock';
 import { LoanListStatusFilter } from '../../../../src/modules/loans/dto/loan-list-query.dto';
 
 describe('LoansService', () => {
   let service: LoansService;
+  let mockCreditLineContractClient: MockCreditLineContractClient;
+  let mockReputationContractClient: MockReputationContractClient;
 
   const validWallet = 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW';
   const vendorId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
@@ -40,27 +44,20 @@ describe('LoansService', () => {
     getServiceRoleClient: jest.fn().mockReturnValue(mockSupabaseClient),
   };
 
-  const mockCreditLineContractClient = {
-    buildCreateLoanTransaction: jest.fn(),
-    buildRepayLoanTx: jest.fn(),
-  };
-
-  const mockReputationContractClient = {
-    getScore: jest.fn(),
-  };
-
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LoansService,
         { provide: ReputationService, useValue: mockReputationService },
         { provide: SupabaseService, useValue: mockSupabaseService },
-        { provide: CreditLineContractClient, useValue: mockCreditLineContractClient },
-        { provide: ReputationContractClient, useValue: mockReputationContractClient },
+        { provide: CreditLineContractClient, useClass: MockCreditLineContractClient },
+        { provide: ReputationContractClient, useClass: MockReputationContractClient },
       ],
     }).compile();
 
     service = module.get<LoansService>(LoansService);
+    mockCreditLineContractClient = module.get<MockCreditLineContractClient>(CreditLineContractClient);
+    mockReputationContractClient = module.get<MockReputationContractClient>(ReputationContractClient);
     jest.clearAllMocks();
 
     mockSupabaseClient.from.mockReturnValue(mockSupabaseFrom);

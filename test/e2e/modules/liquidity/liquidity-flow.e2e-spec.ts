@@ -6,7 +6,7 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { LiquidityModule } from '../../../../src/modules/liquidity/liquidity.module';
 import { TransactionsModule } from '../../../../src/modules/transactions/transactions.module';
 import { SupabaseService } from '../../../../src/database/supabase.client';
-import { LiquidityContractClient } from '../../../../src/blockchain/contracts/liquidity-contract.client';
+import { LiquidityPoolContractClient } from '../../../../src/stellar/contracts/clients/liquidity-pool.client';
 import { TransactionsService } from '../../../../src/modules/transactions/transactions.service';
 import { JwtAuthGuard } from '../../../../src/common/guards/jwt-auth.guard';
 import { TransactionType } from '../../../../src/modules/transactions/dto/submit-transaction-request.dto';
@@ -62,7 +62,7 @@ describe('Liquidity Operations Flow (e2e)', () => {
     }),
   };
 
-  const mockLiquidityContractClient = {
+  const mockLiquidityPoolContractClient = {
     getPoolStats: jest.fn(),
     calculateDeposit: jest.fn(),
     buildDepositTx: jest.fn(),
@@ -143,8 +143,8 @@ describe('Liquidity Operations Flow (e2e)', () => {
       .useValue(mockCacheManager)
       .overrideProvider(SupabaseService)
       .useValue(mockSupabaseService)
-      .overrideProvider(LiquidityContractClient)
-      .useValue(mockLiquidityContractClient)
+      .overrideProvider(LiquidityPoolContractClient)
+      .useValue(mockLiquidityPoolContractClient)
       .overrideProvider(TransactionsService)
       .useValue(mockTransactionsService)
       .overrideGuard(JwtAuthGuard)
@@ -184,7 +184,7 @@ describe('Liquidity Operations Flow (e2e)', () => {
     mockCacheManager.get.mockResolvedValue(undefined);
     mockCacheManager.set.mockResolvedValue(undefined);
 
-    mockLiquidityContractClient.getPoolStats.mockImplementation(async () => ({
+    mockLiquidityPoolContractClient.getPoolStats.mockImplementation(async () => ({
       totalLiquidity: state.totalLiquidity,
       lockedLiquidity: state.lockedLiquidity,
       availableLiquidity: state.availableLiquidity,
@@ -193,7 +193,7 @@ describe('Liquidity Operations Flow (e2e)', () => {
       withdrawalFeeBps: state.withdrawalFeeBps,
     }));
 
-    mockLiquidityContractClient.calculateDeposit.mockImplementation(async (amountInStroops: bigint) => {
+    mockLiquidityPoolContractClient.calculateDeposit.mockImplementation(async (amountInStroops: bigint) => {
       const shares =
         state.totalShares <= 0n || state.totalLiquidity <= 0n
           ? amountInStroops
@@ -204,11 +204,11 @@ describe('Liquidity Operations Flow (e2e)', () => {
       return shares;
     });
 
-    mockLiquidityContractClient.buildDepositTx.mockResolvedValue('AAAAAgDEPOSIT...');
+    mockLiquidityPoolContractClient.buildDepositTx.mockResolvedValue('AAAAAgDEPOSIT...');
 
-    mockLiquidityContractClient.getLpShares.mockImplementation(async () => state.userShares);
+    mockLiquidityPoolContractClient.getLpShares.mockImplementation(async () => state.userShares);
 
-    mockLiquidityContractClient.calculateWithdrawal.mockImplementation(async (sharesInStroops: bigint) => {
+    mockLiquidityPoolContractClient.calculateWithdrawal.mockImplementation(async (sharesInStroops: bigint) => {
       if (state.totalShares <= 0n) {
         return 0n;
       }
@@ -216,7 +216,7 @@ describe('Liquidity Operations Flow (e2e)', () => {
       return (sharesInStroops * state.totalLiquidity) / state.totalShares;
     });
 
-    mockLiquidityContractClient.buildWithdrawTx.mockImplementation(async (_wallet, sharesInStroops: bigint) => {
+    mockLiquidityPoolContractClient.buildWithdrawTx.mockImplementation(async (_wallet, sharesInStroops: bigint) => {
       state.pendingWithdrawShares = sharesInStroops;
       return 'AAAAAgWITHDRAW...';
     });

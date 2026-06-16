@@ -4,7 +4,7 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { ConfigModule } from '@nestjs/config';
 import { LoansModule } from '../../../../src/modules/loans/loans.module';
 import { JwtAuthGuard } from '../../../../src/common/guards/jwt-auth.guard';
-import { ReputationContractClient } from '../../../../src/blockchain/contracts/reputation-contract.client';
+import { ReputationContractClient } from '../../../../src/stellar/contracts/clients/reputation.client';
 import { SupabaseService } from '../../../../src/database/supabase.client';
 
 describe('LoansController available credit (e2e)', () => {

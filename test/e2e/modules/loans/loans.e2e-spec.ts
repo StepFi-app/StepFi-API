@@ -6,7 +6,7 @@ import { LoansModule } from '../../../../src/modules/loans/loans.module';
 import { ReputationService } from '../../../../src/modules/reputation/reputation.service';
 import { SorobanService } from '../../../../src/blockchain/soroban/soroban.service';
 import { SupabaseService } from '../../../../src/database/supabase.client';
-import { CreditLineContractClient } from '../../../../src/blockchain/contracts/credit-line-contract.client';
+import { CreditLineContractClient } from '../../../../src/stellar/contracts/clients/creditline.client';
 import { JwtAuthGuard } from '../../../../src/common/guards/jwt-auth.guard';
 
 describe('LoansController (e2e)', () => {

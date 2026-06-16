@@ -3,7 +3,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../../database/supabase.client';
-import { ReputationContractClient } from '../../blockchain/contracts/reputation-contract.client';
+import { ReputationContractClient } from '../../stellar/contracts/clients/reputation.client';
 
 export interface Reputation {
     wallet: string;
