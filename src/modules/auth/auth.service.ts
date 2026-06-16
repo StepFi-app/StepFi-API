@@ -100,7 +100,26 @@ export class AuthService {
     }
     try {
       const keypair = Keypair.fromPublicKey(dto.wallet);
-      const isValid = keypair.verify(Buffer.from(dto.nonce), Buffer.from(dto.signature, 'base64'));
+
+      let isValid = false;
+
+      // First attempt: raw Ed25519 signature (mobile clients)
+      try {
+        isValid = keypair.verify(Buffer.from(dto.nonce), Buffer.from(dto.signature, 'base64'));
+      } catch (e) {
+        isValid = false;
+      }
+
+      // If raw verification failed, try SEP-0043 (browser wallets like Freighter)
+      if (!isValid) {
+        try {
+          const sepMessage = 'Stellar Signing Key: ' + dto.nonce;
+          isValid = keypair.verify(Buffer.from(sepMessage), Buffer.from(dto.signature, 'base64'));
+        } catch (e) {
+          isValid = false;
+        }
+      }
+
       if (!isValid) {
         throw new UnauthorizedException({ code: 'AUTH_SIGNATURE_INVALID', message: 'Invalid signature.' });
       }

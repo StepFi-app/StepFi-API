@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, Matches, Length } from 'class-validator';
+import { IsString, IsNotEmpty, Matches, Length, IsOptional, IsIn } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 /**
@@ -44,3 +44,13 @@ export class VerifyRequestDto {
   @IsNotEmpty({ message: 'Signature is required' })
   signature: string;
 }
+  @ApiProperty({
+    description: "Signature type — 'raw' for raw Ed25519 or 'sep0043' for browser wallets",
+    example: 'raw',
+    required: false,
+    enum: ['raw', 'sep0043'],
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['raw', 'sep0043'])
+  signatureType?: 'raw' | 'sep0043' = 'raw';

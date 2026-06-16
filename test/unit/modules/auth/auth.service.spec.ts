@@ -243,6 +243,21 @@ describe('AuthService', () => {
       );
     });
 
+    it('should verify using SEP-0043 if raw verification fails', async () => {
+      const { mockKeypair } = setupMocks({ signatureValid: false });
+      // First call (raw) returns false, second call (sep0043) should return true
+      mockKeypair.verify.mockImplementationOnce(() => false).mockImplementationOnce(() => true);
+
+      await expect(service.verifySignature(validDto)).resolves.toBeUndefined();
+
+      expect(Keypair.fromPublicKey).toHaveBeenCalledWith(validWallet);
+      expect(mockKeypair.verify).toHaveBeenCalledWith(Buffer.from(validNonce), Buffer.from(validSignature, 'base64'));
+      expect(mockKeypair.verify).toHaveBeenCalledWith(
+        Buffer.from('Stellar Signing Key: ' + validNonce),
+        Buffer.from(validSignature, 'base64'),
+      );
+    });
+
     it('should mark nonce as used after successful verification', async () => {
       const { } = setupMocks();
       await service.verifySignature(validDto);
