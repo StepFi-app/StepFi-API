@@ -1,5 +1,5 @@
 import { Controller, Get, Patch, Body, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { LearnersService } from './learners.service';
 import { UpdateLearnerProfileDto } from './dto/learner-profile.dto';
 import { LearnerResponseDto } from './dto/learner-response.dto';
@@ -25,6 +25,7 @@ export class LearnersController {
   @Patch('me')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Update learner profile' })
+  @ApiBody({ type: UpdateLearnerProfileDto })
   @ApiResponse({ status: 200, description: 'Profile updated', type: LearnerResponseDto })
   async updateProfile(
     @CurrentUser() user: { wallet: string },

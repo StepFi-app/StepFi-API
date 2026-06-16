@@ -44,6 +44,50 @@ async function bootstrap() {
 
   setupSwagger(app);
 
+  const isProduction = process.env.NODE_ENV === 'production';
+  if (isProduction) {
+    const docsUsername = process.env.DOCS_USERNAME;
+    const docsPassword = process.env.DOCS_PASSWORD;
+
+    if (docsUsername && docsPassword) {
+      const docsPaths = [`/${apiPrefix}/docs`, `/${apiPrefix}/docs-json`];
+
+      app.getHttpAdapter().getInstance().addHook('preHandler', (request: any, reply: any, done: () => void) => {
+        if (!docsPaths.includes(request.url)) {
+          done();
+          return;
+        }
+
+        const authHeader = request.headers['authorization'];
+        if (!authHeader || !authHeader.startsWith('Basic ')) {
+          reply.header('WWW-Authenticate', 'Basic realm="StepFi API Docs"');
+          reply.status(401).send({ message: 'Documentation requires authentication' });
+          return;
+        }
+
+        const base64 = authHeader.slice(6);
+        const decoded = Buffer.from(base64, 'base64').toString('utf-8');
+        const colonIdx = decoded.indexOf(':');
+
+        if (colonIdx === -1) {
+          reply.status(401).send({ message: 'Invalid authorization header format' });
+          return;
+        }
+
+        const username = decoded.slice(0, colonIdx);
+        const password = decoded.slice(colonIdx + 1);
+
+        if (username !== docsUsername || password !== docsPassword) {
+          reply.header('WWW-Authenticate', 'Basic realm="StepFi API Docs"');
+          reply.status(401).send({ message: 'Invalid credentials' });
+          return;
+        }
+
+        done();
+      });
+    }
+  }
+
   await app.listen(port, '0.0.0.0');
 
   const logger = app.get(Logger);

@@ -84,6 +84,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiOperation({ summary: 'Refresh access token using refresh token' })
+  @ApiBody({ schema: { type: 'object', properties: { refreshToken: { type: 'string', description: 'JWT refresh token obtained from POST /auth/verify' } }, required: ['refreshToken'] } })
   @ApiResponse({ status: 200, description: 'New tokens issued', type: AuthResponseDto })
   @ApiResponse({ status: 401, description: 'Refresh token invalid or expired' })
   async refresh(@Body('refreshToken') token: string): Promise<AuthResponseDto> {
