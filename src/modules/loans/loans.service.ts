@@ -23,6 +23,7 @@ import {
   LoanListVendorDto,
   LoanListResponseDto,
 } from './dto/loan-list-response.dto';
+import { LoanStatsResponseDto } from './dto/loan-stats-response.dto';
 import { ReputationTier } from '../reputation/dto/reputation-response.dto';
 
 const GUARANTEE_PERCENT = 0.2;
@@ -324,6 +325,44 @@ export class LoansService {
       availableCredit,
       activeLoans: activeLoans?.length ?? 0,
     };
+  }
+
+  async getStats(): Promise<LoanStatsResponseDto> {
+    const client = this.supabaseService.getServiceRoleClient();
+    const { data, error } = await client
+      .from('loans')
+      .select('status, loan_amount, completed_at, next_payment_due');
+
+    if (error) {
+      this.logger.error(`Failed to fetch loan stats: ${error.message}`);
+      throw new InternalServerErrorException({
+        code: 'LOAN_STATS_QUERY_FAILED',
+        message: 'Failed to retrieve loan statistics. Please try again later.',
+      });
+    }
+
+    const loans = data ?? [];
+    const totalLoans = loans.length;
+    const activeLoans = loans.filter((l) => l.status === 'active').length;
+    const repaidLoans = loans.filter((l) => l.status === 'completed').length;
+    const defaultedLoans = loans.filter((l) => l.status === 'defaulted').length;
+    const totalVolume = this.roundCurrency(
+      loans.reduce((sum, l) => sum + Number(l.loan_amount ?? 0), 0),
+    );
+
+    const repaidOnTime = loans.filter(
+      (l) =>
+        l.status === 'completed' &&
+        l.completed_at != null &&
+        l.next_payment_due != null &&
+        new Date(l.completed_at) <= new Date(l.next_payment_due),
+    ).length;
+    const onTimeRepaymentRate =
+      repaidLoans > 0
+        ? Math.round((repaidOnTime / repaidLoans) * 10_000) / 100
+        : 0;
+
+    return { totalLoans, activeLoans, repaidLoans, defaultedLoans, totalVolume, onTimeRepaymentRate };
   }
 
   private async prepareLoanPreview(

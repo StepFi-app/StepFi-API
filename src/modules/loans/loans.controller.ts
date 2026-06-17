@@ -28,6 +28,7 @@ import { LoanPaymentResponseDto } from './dto/loan-payment-response.dto';
 import { AvailableCreditResponseDto } from './dto/available-credit-response.dto';
 import { LoanListQueryDto, LoanListStatusFilter } from './dto/loan-list-query.dto';
 import { LoanListResponseDto } from './dto/loan-list-response.dto';
+import { LoanStatsResponseDto } from './dto/loan-stats-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -59,6 +60,22 @@ export class LoansController {
   ) {
     const data = await this.loansService.calculateLoanQuote(user.wallet, dto);
     return { success: true, data, message: 'Loan quote calculated successfully' };
+  }
+
+  @Get('stats')
+  @ApiOperation({
+    summary: 'Get protocol-wide loan statistics',
+    description:
+      'Returns aggregated loan counts and volume across all users. No authentication required.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Loan statistics retrieved successfully',
+    type: LoanStatsResponseDto,
+  })
+  async getStats() {
+    const data = await this.loansService.getStats();
+    return { success: true, data, message: 'Loan statistics retrieved successfully' };
   }
 
   @Get('my-loans')
