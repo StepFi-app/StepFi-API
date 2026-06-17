@@ -24,6 +24,8 @@ import {
   LoanListResponseDto,
 } from './dto/loan-list-response.dto';
 import { ReputationTier } from '../reputation/dto/reputation-response.dto';
+import { CreditScoringService, AssessParams } from '../credit-scoring/credit-scoring.service';
+import { CreditAssessmentResultDto } from '../credit-scoring/dto/credit-scoring-response.dto';
 
 const GUARANTEE_PERCENT = 0.2;
 const LOAN_PERCENT = 0.8;
@@ -46,7 +48,7 @@ interface CreateLoanRecord {
   total_repayment: number;
   remaining_balance: number;
   term: number;
-  status: 'pending';
+  status: 'pending' | 'under_review';
   next_payment_due: string | null;
 }
 
@@ -88,6 +90,7 @@ export class LoansService {
     private readonly supabaseService: SupabaseService,
     private readonly creditLineContractClient: CreditLineContractClient,
     private readonly reputationContractClient: ReputationContractClient,
+    private readonly creditScoringService: CreditScoringService,
   ) {}
 
   async calculateLoanQuote(
@@ -103,23 +106,37 @@ export class LoansService {
     const loanId = this.generateProvisionalLoanId();
     const description = `Create BNPL loan for $${dto.amount} at ${vendor.name}`;
 
-    let xdr: string;
-    try {
-      xdr = await this.creditLineContractClient.buildCreateLoanTransaction(wallet, {
-        loanId,
-        vendorId: vendor.id,
-        amount: dto.amount,
-        loanAmount: terms.loanAmount,
-        guarantee: terms.guarantee,
-        interestRate: terms.interestRate,
-        term: terms.term,
+    const assessment = await this.runCreditAssessment(wallet, dto.amount);
+
+    if (assessment.decision === 'rejected') {
+      throw new BadRequestException({
+        code: 'LOAN_ASSESSMENT_REJECTED',
+        message: `Loan application was declined: ${assessment.reasons[0]}`,
+        details: assessment,
       });
-    } catch (error) {
-      this.logger.error(`Failed to build create_loan XDR for ${loanId}: ${error.message}`);
-      throw new InternalServerErrorException({
-        code: 'BLOCKCHAIN_CREATE_LOAN_XDR_FAILED',
-        message: 'Failed to construct unsigned loan transaction. Please try again.',
-      });
+    }
+
+    const status = assessment.decision === 'approved' ? 'pending' : 'under_review';
+    let xdr: string | null = null;
+
+    if (status === 'pending') {
+      try {
+        xdr = await this.creditLineContractClient.buildCreateLoanTransaction(wallet, {
+          loanId,
+          vendorId: vendor.id,
+          amount: dto.amount,
+          loanAmount: terms.loanAmount,
+          guarantee: terms.guarantee,
+          interestRate: terms.interestRate,
+          term: terms.term,
+        });
+      } catch (error) {
+        this.logger.error(`Failed to build create_loan XDR for ${loanId}: ${error.message}`);
+        throw new InternalServerErrorException({
+          code: 'BLOCKCHAIN_CREATE_LOAN_XDR_FAILED',
+          message: 'Failed to construct unsigned loan transaction. Please try again.',
+        });
+      }
     }
 
     try {
@@ -134,7 +151,7 @@ export class LoansService {
         total_repayment: terms.totalRepayment,
         remaining_balance: terms.totalRepayment,
         term: terms.term,
-        status: 'pending',
+        status,
         next_payment_due: terms.schedule[0]?.dueDate ?? null,
       });
     } catch (error) {
@@ -150,6 +167,7 @@ export class LoansService {
       xdr,
       description,
       terms,
+      assessment,
     };
   }
 
@@ -259,6 +277,8 @@ export class LoansService {
         LoanListStatusFilter.ACTIVE,
         LoanListStatusFilter.COMPLETED,
         LoanListStatusFilter.DEFAULTED,
+        LoanListStatusFilter.UNDER_REVIEW,
+        LoanListStatusFilter.REJECTED,
       ]);
     }
 
@@ -494,6 +514,98 @@ export class LoansService {
 
   private roundCurrency(value: number): number {
     return Math.round(value * 100) / 100;
+  }
+
+  async assessLoan(
+    wallet: string,
+    loanId: string,
+  ): Promise<{ loanId: string; assessment: CreditAssessmentResultDto; previousStatus: string; currentStatus: string }> {
+    const client = this.supabaseService.getServiceRoleClient();
+    const { data: loan, error } = await client
+      .from('loans')
+      .select('id, loan_id, user_wallet, status, amount')
+      .eq('id', loanId)
+      .single();
+
+    if (error || !loan) {
+      throw new NotFoundException({
+        code: 'LOAN_NOT_FOUND',
+        message: 'Loan not found. Please provide a valid loan ID.',
+      });
+    }
+
+    if (loan.user_wallet !== wallet) {
+      throw new NotFoundException({
+        code: 'LOAN_NOT_FOUND',
+        message: 'Loan not found. Please provide a valid loan ID.',
+      });
+    }
+
+    if (!['pending', 'under_review'].includes(loan.status)) {
+      throw new BadRequestException({
+        code: 'LOAN_ASSESSMENT_INVALID_STATUS',
+        message: `Cannot assess a loan with status '${loan.status}'. Only pending or under_review loans can be assessed.`,
+      });
+    }
+
+    const assessment = await this.runCreditAssessment(wallet, Number(loan.amount));
+    const previousStatus = loan.status;
+
+    const newStatus =
+      assessment.decision === 'approved' ? 'pending' :
+      assessment.decision === 'rejected' ? 'rejected' : 'under_review';
+
+    this.logger.log(`Assessing loan ${loanId}: ${previousStatus} -> ${newStatus} (${assessment.decision})`);
+
+    const { error: updateError } = await client
+      .from('loans')
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', loanId);
+
+    if (updateError) {
+      this.logger.error(`Failed to update loan ${loanId} status: ${updateError.message}`);
+      throw new InternalServerErrorException({
+        code: 'LOAN_ASSESSMENT_UPDATE_FAILED',
+        message: 'Failed to update loan status after assessment.',
+      });
+    }
+
+    return {
+      loanId: loan.loan_id,
+      assessment,
+      previousStatus,
+      currentStatus: newStatus,
+    };
+  }
+
+  private async runCreditAssessment(
+    wallet: string,
+    amount: number,
+  ): Promise<CreditAssessmentResultDto> {
+    const reputation = await this.reputationService.getReputationScore(wallet);
+
+    const client = this.supabaseService.getServiceRoleClient();
+    const { data: activeLoans } = await client
+      .from('loans')
+      .select('remaining_balance')
+      .eq('user_wallet', wallet)
+      .eq('status', 'active');
+
+    const creditUsed = (activeLoans ?? []).reduce(
+      (sum, loan) => sum + Number(loan.remaining_balance ?? 0),
+      0,
+    );
+    const creditUtilization =
+      reputation.maxCredit > 0 ? creditUsed / reputation.maxCredit : 0;
+
+    const params: AssessParams = {
+      amount,
+      reputationScore: reputation.score,
+      maxCredit: reputation.maxCredit,
+      creditUtilization,
+    };
+
+    return this.creditScoringService.assess(params);
   }
 
   private mapScoreToCreditTier(score: number): {

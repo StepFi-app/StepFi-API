@@ -22,6 +22,7 @@ import { NonceCleanupModule } from './jobs/nonce-cleanup/nonce-cleanup.module';
 import { StellarModule } from './stellar/stellar.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
+import { CreditScoringModule } from './modules/credit-scoring/credit-scoring.module';
 import { CorrelationIdMiddleware } from './common/logger/correlation-id.middleware';
 
 @Module({
@@ -60,6 +61,7 @@ import { CorrelationIdMiddleware } from './common/logger/correlation-id.middlewa
     LoanPaymentReminderModule,
     TransactionStatusCheckerModule,
     NonceCleanupModule,
+    CreditScoringModule,
     StellarModule,
   ],
   controllers: [],

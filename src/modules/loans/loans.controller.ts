@@ -185,4 +185,33 @@ export class LoansController {
     const data = await this.loansService.repayLoan(user.wallet, loanId, dto);
     return { success: true, data, message: 'Repayment transaction constructed successfully' };
   }
+
+  @Post(':loanId/assess')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiParam({
+    name: 'loanId',
+    description: 'UUID of the loan to assess',
+    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+  })
+  @ApiOperation({
+    summary: 'Run credit assessment on a loan',
+    description:
+      'Runs the credit scoring pipeline on a pending or under_review loan and updates its status based on the assessment result. Auto-approved loans stay pending, auto-rejected loans are marked rejected, and edge cases are flagged for manual review.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Loan assessed successfully',
+  })
+  @ApiResponse({ status: 400, description: 'Loan cannot be assessed in its current status' })
+  @ApiResponse({ status: 401, description: 'Unauthorized - missing or invalid JWT' })
+  @ApiResponse({ status: 404, description: 'Loan not found or does not belong to user' })
+  async assessLoan(
+    @CurrentUser() user: { wallet: string },
+    @Param('loanId', ParseUUIDPipe) loanId: string,
+  ) {
+    const data = await this.loansService.assessLoan(user.wallet, loanId);
+    return { success: true, data, message: 'Loan assessment completed successfully' };
+  }
 }

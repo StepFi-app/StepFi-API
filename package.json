@@ -95,7 +95,9 @@
     "rootDir": "test",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.ts$": ["ts-jest", {
+        "diagnostics": false
+      }]
     },
     "collectCoverageFrom": [
       "../src/**/*.(t|j)s"
