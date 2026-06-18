@@ -23,6 +23,7 @@ import { StellarModule } from './stellar/stellar.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { CreditScoringModule } from './modules/credit-scoring/credit-scoring.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { CorrelationIdMiddleware } from './common/logger/correlation-id.middleware';
 
 @Module({
@@ -62,6 +63,7 @@ import { CorrelationIdMiddleware } from './common/logger/correlation-id.middlewa
     TransactionStatusCheckerModule,
     NonceCleanupModule,
     CreditScoringModule,
+    AdminModule,
     StellarModule,
   ],
   controllers: [],
