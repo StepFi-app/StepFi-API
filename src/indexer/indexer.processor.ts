@@ -3,8 +3,8 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 import * as StellarSdk from 'stellar-sdk';
-import { SupabaseService } from '../../database/supabase.client';
-import { SorobanService } from '../../blockchain/soroban/soroban.service';
+import { SupabaseService } from '../database/supabase.client';
+import { SorobanService } from '../blockchain/soroban/soroban.service';
 import { EventParserService } from './event-parser.service';
 import {
   ParsedContractEvent,
