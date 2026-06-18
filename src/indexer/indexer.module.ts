@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule } from '@nestjs/config';
-import { BlockchainIndexerService } from './blockchain-indexer.service';
-import { BlockchainIndexerProcessor } from './blockchain-indexer.processor';
+import { IndexerService } from './indexer.service';
+import { IndexerProcessor } from './indexer.processor';
 import { EventParserService } from './event-parser.service';
 import { SupabaseService } from '../../database/supabase.client';
 import { StellarModule } from '../../stellar/stellar.module';
+import { IndexerController } from './indexer.controller';
+import { IndexerStatusService } from './indexer-status.service';
 
 @Module({
   imports: [
@@ -13,11 +15,13 @@ import { StellarModule } from '../../stellar/stellar.module';
     StellarModule,
     BullModule.registerQueue({ name: 'blockchain-indexer' }),
   ],
+  controllers: [IndexerController],
   providers: [
-    BlockchainIndexerService,
-    BlockchainIndexerProcessor,
+    IndexerService,
+    IndexerProcessor,
     EventParserService,
     SupabaseService,
+    IndexerStatusService,
   ],
 })
-export class BlockchainIndexerModule {}
+export class IndexerModule {}

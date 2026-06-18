@@ -15,7 +15,7 @@ import { LiquidityModule } from './modules/liquidity/liquidity.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
 import { LearnersModule } from './modules/learners/learners.module';
-import { BlockchainIndexerModule } from './jobs/blockchain-indexer/blockchain-indexer.module';
+import { IndexerModule } from './indexer/indexer.module';
 import { LoanPaymentReminderModule } from './jobs/loan-payment-reminder/loan-payment-reminder.module';
 import { TransactionStatusCheckerModule } from './jobs/transaction-status-checker/transaction-status-checker.module';
 import { NonceCleanupModule } from './jobs/nonce-cleanup/nonce-cleanup.module';
@@ -57,7 +57,7 @@ import { CorrelationIdMiddleware } from './common/logger/correlation-id.middlewa
     NotificationsModule,
     TransactionsModule,
     LearnersModule,
-    BlockchainIndexerModule,
+    IndexerModule,
     LoanPaymentReminderModule,
     TransactionStatusCheckerModule,
     NonceCleanupModule,

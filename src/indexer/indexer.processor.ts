@@ -19,15 +19,15 @@ import {
 /**
  * BullMQ processor for the `blockchain-indexer` queue.
  *
- * On every invocation (every 30 s) it:
- *  1. Reads the last indexed ledger per contract from `indexer_cursor`.
+ * On every invocation (every 6 s) it:
+ *  1. Reads the last indexed ledger per contract from `indexer_state`.
  *  2. Fetches new Soroban events since that ledger.
  *  3. Parses, deduplicates, and persists them to the database.
  *  4. Updates the cursor so the next run resumes correctly.
  */
 @Processor('blockchain-indexer')
-export class BlockchainIndexerProcessor extends WorkerHost {
-  private readonly logger = new Logger(BlockchainIndexerProcessor.name);
+export class IndexerProcessor extends WorkerHost {
+  private readonly logger = new Logger(IndexerProcessor.name);
 
   private readonly loanContractId: string;
   private readonly reputationContractId: string;
@@ -51,7 +51,7 @@ export class BlockchainIndexerProcessor extends WorkerHost {
 
   async process(_job: Job): Promise<void> {
     this.logger.log({
-      context: 'BlockchainIndexerProcessor',
+      context: 'IndexerProcessor',
       action: 'process',
     }, 'Blockchain indexer job started');
 
@@ -59,7 +59,7 @@ export class BlockchainIndexerProcessor extends WorkerHost {
       await this.indexContract(this.loanContractId, 'loan');
     } catch (error) {
       this.logger.error({
-        context: 'BlockchainIndexerProcessor',
+        context: 'IndexerProcessor',
         action: 'indexLoanContract',
         error: error.message,
         stack: error.stack,
@@ -70,7 +70,7 @@ export class BlockchainIndexerProcessor extends WorkerHost {
       await this.indexContract(this.reputationContractId, 'reputation');
     } catch (error) {
       this.logger.error({
-        context: 'BlockchainIndexerProcessor',
+        context: 'IndexerProcessor',
         action: 'indexReputationContract',
         error: error.message,
         stack: error.stack,
@@ -78,7 +78,7 @@ export class BlockchainIndexerProcessor extends WorkerHost {
     }
 
     this.logger.log({
-      context: 'BlockchainIndexerProcessor',
+      context: 'IndexerProcessor',
       action: 'process',
     }, 'Blockchain indexer job completed');
   }
@@ -102,8 +102,7 @@ export class BlockchainIndexerProcessor extends WorkerHost {
     const startLedger = cursor + 1;
 
     this.logger.debug({
-      context: 'BlockchainIndexerProcessor',
-      action: 'indexContract',
+        context: 'IndexerProcessor',
       contractId: contractId.slice(0, 8) + '...',
       label,
       startLedger,
@@ -117,7 +116,7 @@ export class BlockchainIndexerProcessor extends WorkerHost {
     }
 
     this.logger.log({
-      context: 'BlockchainIndexerProcessor',
+      context: 'IndexerProcessor',
       action: 'indexContract',
       label,
       eventCount: rawEvents.length,
@@ -140,7 +139,7 @@ export class BlockchainIndexerProcessor extends WorkerHost {
         }
 
         this.logger.log({
-          context: 'BlockchainIndexerProcessor',
+          context: 'IndexerProcessor',
           action: 'eventIndexed',
           eventType: parsed.type,
           eventId: parsed.eventId,
@@ -151,7 +150,7 @@ export class BlockchainIndexerProcessor extends WorkerHost {
       } catch (error) {
         errorCount++;
         this.logger.error({
-          context: 'BlockchainIndexerProcessor',
+          context: 'IndexerProcessor',
           action: 'persistEvent',
           error: error.message,
           eventId: rawEvent?.id,
@@ -165,7 +164,7 @@ export class BlockchainIndexerProcessor extends WorkerHost {
     }
 
     this.logger.log({
-      context: 'BlockchainIndexerProcessor',
+      context: 'IndexerProcessor',
       action: 'indexContractComplete',
       label,
       successCount,
@@ -385,7 +384,7 @@ export class BlockchainIndexerProcessor extends WorkerHost {
     if (cacheError) {
       // Non-fatal: cache update failure should not block event processing
       this.logger.warn({
-        context: 'BlockchainIndexerProcessor',
+        context: 'IndexerProcessor',
         action: 'updateReputationCache',
         error: cacheError.message,
         wallet: payload.wallet,
@@ -398,14 +397,14 @@ export class BlockchainIndexerProcessor extends WorkerHost {
   // -------------------------------------------------------------------------
 
   /**
-   * Reads the last indexed ledger for a contract from `indexer_cursor`.
+   * Reads the last indexed ledger for a contract from `indexer_state`.
    * Returns 0 if no cursor exists (first run).
    */
   async getCursor(contractId: string): Promise<number> {
     const db = this.supabaseService.getServiceRoleClient();
 
     const { data, error } = await db
-      .from('indexer_cursor')
+      .from('indexer_state')
       .select('last_ledger')
       .eq('contract_id', contractId)
       .single();
@@ -423,7 +422,7 @@ export class BlockchainIndexerProcessor extends WorkerHost {
   async updateCursor(contractId: string, ledger: number): Promise<void> {
     const db = this.supabaseService.getServiceRoleClient();
 
-    const { error } = await db.from('indexer_cursor').upsert(
+    const { error } = await db.from('indexer_state').upsert(
       {
         contract_id: contractId,
         last_ledger: ledger,
@@ -434,7 +433,7 @@ export class BlockchainIndexerProcessor extends WorkerHost {
 
     if (error) {
       this.logger.error({
-        context: 'BlockchainIndexerProcessor',
+        context: 'IndexerProcessor',
         action: 'updateCursor',
         error: error.message,
         contractId,

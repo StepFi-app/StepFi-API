@@ -5,12 +5,12 @@ import { Queue } from 'bullmq';
 /**
  * Schedules the blockchain-indexer repeating job on module initialisation.
  *
- * The job runs every 30 seconds. If the job already exists (e.g. after a
+ * The job runs every 6 seconds. If the job already exists (e.g. after a
  * hot-reload) BullMQ silently skips the duplicate.
  */
 @Injectable()
-export class BlockchainIndexerService implements OnModuleInit {
-  private readonly logger = new Logger(BlockchainIndexerService.name);
+export class IndexerService implements OnModuleInit {
+  private readonly logger = new Logger(IndexerService.name);
 
   constructor(
     @InjectQueue('blockchain-indexer')
@@ -18,7 +18,6 @@ export class BlockchainIndexerService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    // Remove any stale repeatable jobs from a previous run
     const existing = await this.indexerQueue.getRepeatableJobs();
     for (const job of existing) {
       await this.indexerQueue.removeRepeatableByKey(job.key);
@@ -28,15 +27,18 @@ export class BlockchainIndexerService implements OnModuleInit {
       'index-events',
       {},
       {
-        repeat: { every: 30_000 }, // 30 seconds
+        repeat: { every: 6_000 }, // 6 seconds
         removeOnComplete: { count: 10 },
         removeOnFail: { count: 50 },
       },
     );
 
-    this.logger.log({
-      context: 'BlockchainIndexerService',
-      action: 'onModuleInit',
-    }, 'Blockchain indexer job scheduled — runs every 30 seconds');
+    this.logger.log(
+      {
+        context: 'IndexerService',
+        action: 'onModuleInit',
+      },
+      'Indexer job scheduled — runs every 6 seconds',
+    );
   }
 }

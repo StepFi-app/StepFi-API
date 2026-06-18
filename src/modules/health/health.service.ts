@@ -150,7 +150,7 @@ export class HealthService {
     try {
       const db = this.supabaseService.getServiceRoleClient();
       const { data } = await db
-        .from('indexer_cursor')
+        .from('indexer_state')
         .select('last_ledger')
         .order('updated_at', { ascending: false })
         .limit(1)
