@@ -9,6 +9,7 @@ import {
   ApproveVouchDto,
   RequestVouchDto,
   VouchResponseDto,
+  VouchRequestItemDto,
   VouchStatus,
 } from './dto/vouch.dto';
 
@@ -17,6 +18,7 @@ interface VouchRow {
   mentor_wallet: string;
   learner_wallet: string;
   message: string | null;
+  loan_amount: number | null;
   status: VouchStatus;
   created_at: string;
   expires_at: string;
@@ -165,6 +167,56 @@ export class VouchingService {
 
     const rows = (data ?? []) as VouchRow[];
     return rows.map((row) => this.mapToDto(row));
+  }
+
+  async getIncomingRequests(mentorWallet: string): Promise<VouchRequestItemDto[]> {
+    const client = this.supabaseService.getClient();
+
+    const { data, error } = await client
+      .from('vouches')
+      .select('learner_wallet, message, loan_amount, created_at')
+      .eq('mentor_wallet', mentorWallet)
+      .eq('status', VouchStatus.PENDING)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      this.logger.error(`Failed to fetch incoming requests for ${mentorWallet}: ${error.message}`);
+      throw new Error('Failed to fetch vouch requests.');
+    }
+
+    const rows = data ?? [];
+    const results: VouchRequestItemDto[] = [];
+
+    for (const row of rows) {
+      const reputationScore = await this.getLearnerReputationScore(row.learner_wallet);
+      results.push({
+        learnerWallet: row.learner_wallet,
+        reputationScore,
+        requestedLoanAmount: row.loan_amount ?? null,
+        loanPurpose: row.message ?? null,
+        requestedAt: row.created_at,
+      });
+    }
+
+    return results;
+  }
+
+  private async getLearnerReputationScore(wallet: string): Promise<number> {
+    try {
+      const { data, error } = await this.supabaseService.getClient()
+        .from('reputation_cache')
+        .select('score')
+        .eq('wallet_address', wallet)
+        .maybeSingle();
+
+      if (error || !data) {
+        return 0;
+      }
+
+      return data.score;
+    } catch {
+      return 0;
+    }
   }
 
   private mapToDto(data: VouchRow): VouchResponseDto {

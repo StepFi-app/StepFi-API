@@ -46,3 +46,37 @@ export class VouchResponseDto {
   @ApiProperty() createdAt: string;
   @ApiProperty() expiresAt: string;
 }
+
+export class VouchRequestItemDto {
+  @ApiProperty({
+    description: 'Learner Stellar wallet address',
+    example: 'GALPHABCDEFGHIJKLMNOPQRSTUVWXYZ23456789ABCDEFGHIJKLMN',
+  })
+  learnerWallet: string;
+
+  @ApiProperty({
+    description: 'Learner reputation score (0-100)',
+    example: 72,
+  })
+  reputationScore: number;
+
+  @ApiProperty({
+    description: 'Requested loan amount in USD',
+    example: 500,
+    nullable: true,
+  })
+  requestedLoanAmount: number | null;
+
+  @ApiProperty({
+    description: 'Loan purpose or message from the learner',
+    example: 'Need a loan for inventory restocking',
+    nullable: true,
+  })
+  loanPurpose: string | null;
+
+  @ApiProperty({
+    description: 'ISO 8601 timestamp when the vouch was requested',
+    example: '2026-06-19T12:00:00.000Z',
+  })
+  requestedAt: string;
+}

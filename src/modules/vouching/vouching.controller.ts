@@ -18,6 +18,7 @@ import {
   ApproveVouchDto,
   RequestVouchDto,
   VouchResponseDto,
+  VouchRequestItemDto,
 } from './dto/vouch.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -71,5 +72,15 @@ export class VouchingController {
     @CurrentUser() user: { wallet: string },
   ): Promise<VouchResponseDto[]> {
     return this.vouchingService.getMentorVouches(user.wallet);
+  }
+
+  @Get('requests')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get incoming vouch requests for the authenticated mentor' })
+  @ApiResponse({ status: 200, description: 'List of pending vouch requests', type: [VouchRequestItemDto] })
+  async getRequests(
+    @CurrentUser() user: { wallet: string },
+  ): Promise<VouchRequestItemDto[]> {
+    return this.vouchingService.getIncomingRequests(user.wallet);
   }
 }
