@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from 'stellar-sdk';
 import { SorobanService } from '../../../blockchain/soroban/soroban.service';
+import { TransactionBuilderService } from '../../transaction-builder.service';
 import { CreateLoanParams, CREDIT_LINE_CONTRACT_ID_KEY } from '../interfaces/creditline.interface';
 import {
   ContractNotConfiguredError,
@@ -15,6 +16,7 @@ export class CreditLineContractClient {
 
   constructor(
     private readonly sorobanService: SorobanService,
+    private readonly transactionBuilderService: TransactionBuilderService,
     private readonly configService: ConfigService,
   ) {
     this.contractId =
@@ -43,26 +45,32 @@ export class CreditLineContractClient {
     const loanAmount = this.toContractAmount(params.loanAmount);
     const guarantee = this.toContractAmount(params.guarantee);
 
-    const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
-      fee: '100',
-      networkPassphrase,
-    })
-      .addOperation(
-        contract.call(
-          'create_loan',
-          StellarSdk.nativeToScVal(params.loanId, { type: 'string' }),
-          StellarSdk.nativeToScVal(params.vendorId, { type: 'string' }),
-          StellarSdk.nativeToScVal(amount, { type: 'i128' }),
-          StellarSdk.nativeToScVal(loanAmount, { type: 'i128' }),
-          StellarSdk.nativeToScVal(guarantee, { type: 'i128' }),
-          StellarSdk.nativeToScVal(params.interestRate, { type: 'u32' }),
-          StellarSdk.nativeToScVal(params.term, { type: 'u32' }),
-        ),
-      )
-      .setTimeout(30)
-      .build();
+    const prepared = await this.transactionBuilderService.buildWithFeeRetry(
+      1,
+      'create_loan transaction',
+      async (fee) => {
+        const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
+          fee,
+          networkPassphrase,
+        })
+          .addOperation(
+            contract.call(
+              'create_loan',
+              StellarSdk.nativeToScVal(params.loanId, { type: 'string' }),
+              StellarSdk.nativeToScVal(params.vendorId, { type: 'string' }),
+              StellarSdk.nativeToScVal(amount, { type: 'i128' }),
+              StellarSdk.nativeToScVal(loanAmount, { type: 'i128' }),
+              StellarSdk.nativeToScVal(guarantee, { type: 'i128' }),
+              StellarSdk.nativeToScVal(params.interestRate, { type: 'u32' }),
+              StellarSdk.nativeToScVal(params.term, { type: 'u32' }),
+            ),
+          )
+          .setTimeout(30)
+          .build();
 
-    const prepared = await server.prepareTransaction(tx);
+        return server.prepareTransaction(tx);
+      },
+    );
     return prepared.toXDR();
   }
 
@@ -83,15 +91,21 @@ export class CreditLineContractClient {
       const sourceKeypair = StellarSdk.Keypair.random();
       const sourceAccount = new StellarSdk.Account(sourceKeypair.publicKey(), '0');
 
-      const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
-        fee: StellarSdk.BASE_FEE,
-        networkPassphrase,
-      })
-        .addOperation(contract.call('repay_loan', userArg, loanIdArg, amountArg))
-        .setTimeout(300)
-        .build();
+      const prepared = await this.transactionBuilderService.buildWithFeeRetry(
+        1,
+        'repay_loan transaction',
+        async (fee) => {
+          const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
+            fee,
+            networkPassphrase,
+          })
+            .addOperation(contract.call('repay_loan', userArg, loanIdArg, amountArg))
+            .setTimeout(300)
+            .build();
 
-      const prepared = await server.prepareTransaction(tx);
+          return server.prepareTransaction(tx);
+        },
+      );
       return prepared.toXDR();
     } catch (error) {
       if (error instanceof ContractNotConfiguredError) {

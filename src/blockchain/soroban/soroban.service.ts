@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from 'stellar-sdk';
+import { TransactionBuilderService } from '../../stellar/transaction-builder.service';
 
 /**
  * Low-level Soroban RPC client for interacting with smart contracts on the Stellar network.
@@ -12,7 +13,10 @@ export class SorobanService {
   private readonly server: StellarSdk.SorobanRpc.Server;
   private readonly networkPassphrase: string;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly transactionBuilderService: TransactionBuilderService,
+  ) {
     const rpcUrl =
       this.configService.get<string>('STELLAR_SOROBAN_URL') ||
       'https://soroban-testnet.stellar.org';
@@ -55,28 +59,34 @@ export class SorobanService {
 
     const account = new StellarSdk.Account(sourcePublic, '0');
 
-    const tx = new StellarSdk.TransactionBuilder(account, {
-      fee: '100',
-      networkPassphrase: this.networkPassphrase,
-    })
-      .addOperation(contract.call(method, ...args))
-      .setTimeout(30)
-      .build();
+    return this.transactionBuilderService.buildWithFeeRetry(
+      1,
+      `${method} simulation`,
+      async (fee) => {
+        const tx = new StellarSdk.TransactionBuilder(account, {
+          fee,
+          networkPassphrase: this.networkPassphrase,
+        })
+          .addOperation(contract.call(method, ...args))
+          .setTimeout(30)
+          .build();
 
-    const simulation = await this.server.simulateTransaction(tx);
+        const simulation = await this.server.simulateTransaction(tx);
 
-    if (StellarSdk.SorobanRpc.Api.isSimulationError(simulation)) {
-      const errorMsg =
-        (simulation as StellarSdk.SorobanRpc.Api.SimulateTransactionErrorResponse).error ||
-        'Unknown simulation error';
-      throw new Error(`Soroban simulation failed: ${errorMsg}`);
-    }
+        if (StellarSdk.SorobanRpc.Api.isSimulationError(simulation)) {
+          const errorMsg =
+            (simulation as StellarSdk.SorobanRpc.Api.SimulateTransactionErrorResponse).error ||
+            'Unknown simulation error';
+          throw new Error(`Soroban simulation failed: ${errorMsg}`);
+        }
 
-    const successResult = simulation as StellarSdk.SorobanRpc.Api.SimulateTransactionSuccessResponse;
-    if (!successResult.result) {
-      throw new Error('Soroban simulation returned no result');
-    }
+        const successResult = simulation as StellarSdk.SorobanRpc.Api.SimulateTransactionSuccessResponse;
+        if (!successResult.result) {
+          throw new Error('Soroban simulation returned no result');
+        }
 
-    return successResult.result.retval;
+        return successResult.result.retval;
+      },
+    );
   }
 }

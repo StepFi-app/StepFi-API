@@ -12,6 +12,7 @@ import { ConfigService } from '@nestjs/config';
 import { Cache } from 'cache-manager';
 import * as StellarSdk from 'stellar-sdk';
 import { SupabaseService } from '../../database/supabase.client';
+import { TransactionBuilderService } from '../../stellar/transaction-builder.service';
 import { SubmitTransactionRequestDto, TransactionType } from './dto/submit-transaction-request.dto';
 import { SubmitTransactionResponseDto } from './dto/submit-transaction-response.dto';
 import {
@@ -71,6 +72,7 @@ export class TransactionsService {
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
     private readonly configService: ConfigService,
     private readonly supabaseService: SupabaseService,
+    private readonly transactionBuilderService: TransactionBuilderService,
   ) {
     const horizonUrl =
       this.configService.get<string>('STELLAR_HORIZON_URL') ||
@@ -92,7 +94,10 @@ export class TransactionsService {
 
     let transactionHash: string;
     try {
-      const horizonResult = await this.horizonServer.submitTransaction(transaction);
+      const horizonResult = await this.transactionBuilderService.submitWithFeeRetry(
+        transaction,
+        (retryTransaction) => this.horizonServer.submitTransaction(retryTransaction),
+      );
       transactionHash = horizonResult.hash;
     } catch (error) {
       this.handleHorizonError(error);

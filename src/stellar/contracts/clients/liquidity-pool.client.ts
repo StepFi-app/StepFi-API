@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from 'stellar-sdk';
 import { SorobanService } from '../../../blockchain/soroban/soroban.service';
+import { TransactionBuilderService } from '../../transaction-builder.service';
 import { PoolStats, LIQUIDITY_POOL_CONTRACT_ID_KEY } from '../interfaces/liquidity-pool.interface';
 import {
   ContractNotConfiguredError,
@@ -20,6 +21,7 @@ export class LiquidityPoolContractClient {
 
   constructor(
     private readonly sorobanService: SorobanService,
+    private readonly transactionBuilderService: TransactionBuilderService,
     private readonly configService: ConfigService,
   ) {
     this.contractId =
@@ -172,23 +174,36 @@ export class LiquidityPoolContractClient {
       const sourceKeypair = StellarSdk.Keypair.random();
       const sourceAccount = new StellarSdk.Account(sourceKeypair.publicKey(), '0');
 
-      const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
-        fee: StellarSdk.BASE_FEE,
-        networkPassphrase,
-      })
-        .addOperation(contract.call('deposit', userArg, amountArg))
-        .setTimeout(300)
-        .build();
+      const buildTransaction = (fee: string): StellarSdk.Transaction =>
+        new StellarSdk.TransactionBuilder(sourceAccount, {
+          fee,
+          networkPassphrase,
+        })
+          .addOperation(contract.call('deposit', userArg, amountArg))
+          .setTimeout(300)
+          .build();
 
-      const simulation = await server.simulateTransaction(tx);
+      const { tx, simulation } = await this.transactionBuilderService.buildWithFeeRetry(
+        1,
+        'deposit transaction',
+        async (fee) => {
+          const tx = buildTransaction(fee);
+          const simulation = await server.simulateTransaction(tx);
 
-      if (StellarSdk.SorobanRpc.Api.isSimulationError(simulation)) {
-        const errorMsg =
-          (simulation as StellarSdk.SorobanRpc.Api.SimulateTransactionErrorResponse).error ||
-          'Unknown simulation error';
-        this.logger.error(`deposit simulation failed: ${errorMsg}`);
-        throw new ContractSimulationError('deposit');
-      }
+          if (StellarSdk.SorobanRpc.Api.isSimulationError(simulation)) {
+            const errorMsg =
+              (simulation as StellarSdk.SorobanRpc.Api.SimulateTransactionErrorResponse).error ||
+              'Unknown simulation error';
+            if (this.transactionBuilderService.isInsufficientFeeError(errorMsg)) {
+              throw new Error(errorMsg);
+            }
+            this.logger.error(`deposit simulation failed: ${errorMsg}`);
+            throw new ContractSimulationError('deposit');
+          }
+
+          return { tx, simulation };
+        },
+      );
 
       const assembledTx = StellarSdk.SorobanRpc.assembleTransaction(
         tx,
@@ -224,23 +239,36 @@ export class LiquidityPoolContractClient {
       const sourceKeypair = StellarSdk.Keypair.random();
       const sourceAccount = new StellarSdk.Account(sourceKeypair.publicKey(), '0');
 
-      const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
-        fee: StellarSdk.BASE_FEE,
-        networkPassphrase,
-      })
-        .addOperation(contract.call('withdraw', userArg, sharesArg))
-        .setTimeout(300)
-        .build();
+      const buildTransaction = (fee: string): StellarSdk.Transaction =>
+        new StellarSdk.TransactionBuilder(sourceAccount, {
+          fee,
+          networkPassphrase,
+        })
+          .addOperation(contract.call('withdraw', userArg, sharesArg))
+          .setTimeout(300)
+          .build();
 
-      const simulation = await server.simulateTransaction(tx);
+      const { tx, simulation } = await this.transactionBuilderService.buildWithFeeRetry(
+        1,
+        'withdraw transaction',
+        async (fee) => {
+          const tx = buildTransaction(fee);
+          const simulation = await server.simulateTransaction(tx);
 
-      if (StellarSdk.SorobanRpc.Api.isSimulationError(simulation)) {
-        const errorMsg =
-          (simulation as StellarSdk.SorobanRpc.Api.SimulateTransactionErrorResponse).error ||
-          'Unknown simulation error';
-        this.logger.error(`withdraw simulation failed: ${errorMsg}`);
-        throw new ContractSimulationError('withdraw');
-      }
+          if (StellarSdk.SorobanRpc.Api.isSimulationError(simulation)) {
+            const errorMsg =
+              (simulation as StellarSdk.SorobanRpc.Api.SimulateTransactionErrorResponse).error ||
+              'Unknown simulation error';
+            if (this.transactionBuilderService.isInsufficientFeeError(errorMsg)) {
+              throw new Error(errorMsg);
+            }
+            this.logger.error(`withdraw simulation failed: ${errorMsg}`);
+            throw new ContractSimulationError('withdraw');
+          }
+
+          return { tx, simulation };
+        },
+      );
 
       const assembledTx = StellarSdk.SorobanRpc.assembleTransaction(
         tx,

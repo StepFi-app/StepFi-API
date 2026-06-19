@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { SorobanService } from '../blockchain/soroban/soroban.service';
+import { StellarService } from './stellar.service';
+import { TransactionBuilderService } from './transaction-builder.service';
 import { CreditLineContractClient } from './contracts/clients/creditline.client';
 import { ReputationContractClient } from './contracts/clients/reputation.client';
 import { LiquidityPoolContractClient } from './contracts/clients/liquidity-pool.client';
@@ -10,6 +12,8 @@ import { ParametersContractClient } from './contracts/clients/parameters.client'
 @Module({
   imports: [ConfigModule],
   providers: [
+    StellarService,
+    TransactionBuilderService,
     SorobanService,
     CreditLineContractClient,
     ReputationContractClient,
@@ -18,6 +22,8 @@ import { ParametersContractClient } from './contracts/clients/parameters.client'
     ParametersContractClient,
   ],
   exports: [
+    StellarService,
+    TransactionBuilderService,
     SorobanService,
     CreditLineContractClient,
     ReputationContractClient,
