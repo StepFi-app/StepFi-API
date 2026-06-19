@@ -1,6 +1,7 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Counter, Gauge, Histogram } from 'prom-client';
 import {
+  InjectMetric,
   makeCounterProvider,
   makeGaugeProvider,
   makeHistogramProvider,
@@ -47,17 +48,17 @@ export const metricProviders = [
 @Injectable()
 export class MetricsService {
   constructor(
-    @Inject(HTTP_REQUEST_COUNT)
+    @InjectMetric(HTTP_REQUEST_COUNT)
     private readonly requestCounter: Counter<string>,
-    @Inject(HTTP_REQUEST_DURATION_SECONDS)
+    @InjectMetric(HTTP_REQUEST_DURATION_SECONDS)
     private readonly requestDuration: Histogram<string>,
-    @Inject(BULLMQ_QUEUE_DEPTH)
+    @InjectMetric(BULLMQ_QUEUE_DEPTH)
     private readonly queueDepth: Gauge<string>,
-    @Inject(INDEXER_LAG)
+    @InjectMetric(INDEXER_LAG)
     private readonly indexerLag: Gauge<string>,
-    @Inject(HORIZON_HEALTH)
+    @InjectMetric(HORIZON_HEALTH)
     private readonly horizonHealth: Gauge<string>,
-    @Inject(DB_POOL_OPEN)
+    @InjectMetric(DB_POOL_OPEN)
     private readonly dbPoolOpen: Gauge<string>,
   ) {}
 

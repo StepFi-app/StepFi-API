@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, Global } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { BullModule } from '@nestjs/bullmq';
 import { PrometheusModule } from '@willsoto/nestjs-prometheus';
@@ -8,6 +8,7 @@ import { MetricsInterceptor } from './metrics.interceptor';
 import { MetricsUpdater } from './metrics.updater';
 import { SupabaseService } from '../../database/supabase.client';
 
+@Global()
 @Module({
   imports: [
     PrometheusModule.register({
@@ -23,7 +24,7 @@ import { SupabaseService } from '../../database/supabase.client';
       { name: 'nonce-cleanup' },
     ),
   ],
-  controllers: [MetricsController],
+  controllers: [],
   providers: [
     ...metricProviders,
     MetricsService,

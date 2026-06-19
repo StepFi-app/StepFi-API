@@ -165,6 +165,21 @@ The bootstrap command will guide you through the process of setting up a Supabas
 | **Swagger Docs** | https://stepfi-api.onrender.com/api/v1/docs |
 | **Health Check** | https://stepfi-api.onrender.com/api/v1/health |
 
+## 🛠️ Error tracking
+
+Error tracking is powered by Sentry. To enable error tracking in development or production:
+
+1. Create a Sentry project for Nest.js.
+2. Add the following environment variables to your `.env` file:
+   ```env
+   # Sentry DSN for error reporting
+   SENTRY_DSN=https://your-sentry-dsn@sentry.io/project-id
+   
+   # Optional: Sentry Traces Sample Rate (defaults to 0.1)
+   SENTRY_TRACES_SAMPLE_RATE=0.1
+   ```
+3. In production, unhandled exceptions will automatically be reported to Sentry. If `SENTRY_DSN` is not provided, the Sentry SDK will operate in no-op mode (silently) and the app will log unhandled exceptions only to stdout.
+
 ## Docs
 
 Command & config reference can be found [here](https://supabase.com/docs/reference/cli/about).

@@ -1,3 +1,13 @@
+import * as Sentry from '@sentry/nestjs';
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN || undefined,
+  environment: process.env.NODE_ENV || 'development',
+  tracesSampleRate: process.env.SENTRY_TRACES_SAMPLE_RATE
+    ? parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE)
+    : 0.1,
+});
+
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';

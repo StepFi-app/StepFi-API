@@ -1,8 +1,9 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_FILTER } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { BullModule } from '@nestjs/bullmq';
+import { SentryModule, SentryGlobalFilter } from '@sentry/nestjs/setup';
 import { AuthModule } from './modules/auth/auth.module';
 import { HealthModule } from './modules/health/health.module';
 import { LoansModule } from './modules/loans/loans.module';
@@ -29,6 +30,7 @@ import { CorrelationIdMiddleware } from './common/logger/correlation-id.middlewa
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    SentryModule.forRoot(),
     LoggerModule,
     ThrottlerModule.forRoot([
       {
@@ -71,6 +73,10 @@ import { CorrelationIdMiddleware } from './common/logger/correlation-id.middlewa
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_FILTER,
+      useClass: SentryGlobalFilter,
     },
   ],
 })

@@ -50,6 +50,14 @@ EAS build for Expo preview → then landing page → then GitHub issues → then
 - `node_modules` cached via `actions/cache@v4` keyed on `package-lock.json` hash
 - CI status badge added to `README.md` pointing at the workflow
 
+### Error Tracking
+- Integrated `@sentry/nestjs` into the API orchestrator.
+- Configured Sentry initialization at the very top of `src/main.ts` before NestJS bootstrap.
+- Registered `SentryModule` and global exception filter `SentryGlobalFilter` in `src/app.module.ts`.
+- Created `.env.example` with template environment variables, including `SENTRY_DSN` and `SENTRY_TRACES_SAMPLE_RATE`.
+- Added `sentry-test` endpoint to `HealthController` for verification.
+- Documented Sentry configuration in `README.md`.
+
 ---
 
 ## In Progress
