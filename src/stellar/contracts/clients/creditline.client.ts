@@ -102,6 +102,39 @@ export class CreditLineContractClient {
     }
   }
 
+  async buildDeclareDefaultTx(callerWallet: string, loanId: string): Promise<string> {
+    this.ensureConfigured();
+
+    try {
+      const contract = new StellarSdk.Contract(this.contractId);
+      const server = this.sorobanService.getServer();
+      const networkPassphrase = this.sorobanService.getNetworkPassphrase();
+
+      const loanIdArg = StellarSdk.nativeToScVal(loanId, { type: 'string' });
+
+      // Use a disposable source account when building the XDR
+      const sourceKeypair = StellarSdk.Keypair.random();
+      const sourceAccount = new StellarSdk.Account(sourceKeypair.publicKey(), '0');
+
+      const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase,
+      })
+        .addOperation(contract.call('declare_default', loanIdArg))
+        .setTimeout(300)
+        .build();
+
+      const prepared = await server.prepareTransaction(tx);
+      return prepared.toXDR();
+    } catch (error) {
+      if (error instanceof ContractNotConfiguredError) {
+        throw error;
+      }
+      this.logger.error(`Failed to build declare_default transaction: ${error.message}`);
+      throw new ContractTxBuildError('declare_default');
+    }
+  }
+
   private ensureConfigured(): void {
     if (!this.contractId) {
       throw new ContractNotConfiguredError('Credit line contract');

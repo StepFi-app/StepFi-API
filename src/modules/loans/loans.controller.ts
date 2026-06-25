@@ -250,6 +250,35 @@ export class LoansController {
     return { success: true, data, message: 'Repayment submitted and confirmed successfully' };
   }
 
+  @Post(':loanId/check-default')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiParam({
+    name: 'loanId',
+    description: 'UUID of the loan to check for default',
+    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+  })
+  @ApiOperation({
+    summary: 'Check and trigger default on an overdue loan',
+    description:
+      'Checks if an active loan is overdue beyond the grace period (30 days). If so, triggers an on-chain default declaration via the Soroban contract and updates the loan status to defaulted in the database. Requires JWT authentication.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Default check completed',
+  })
+  @ApiResponse({ status: 400, description: 'Loan is not active or not overdue enough' })
+  @ApiResponse({ status: 401, description: 'Unauthorized - missing or invalid JWT' })
+  @ApiResponse({ status: 404, description: 'Loan not found or does not belong to user' })
+  async checkDefault(
+    @CurrentUser() user: { wallet: string },
+    @Param('loanId', ParseUUIDPipe) loanId: string,
+  ) {
+    const data = await this.loansService.checkDefault(user.wallet, loanId);
+    return { success: true, data, message: 'Default check completed successfully' };
+  }
+
   @Post(':loanId/assess')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)

@@ -27,6 +27,20 @@ export class BlockchainService {
     this.logger.log(`BlockchainService Horizon client initialized: ${horizonUrl}`);
   }
 
+  /**
+   * Submits a signed transaction XDR to the Stellar network and waits for
+   * ledger confirmation.
+   */
+  async submitTransaction(signedXdr: string): Promise<{ transactionHash: string }> {
+    const transaction = this.parseTransaction(signedXdr);
+
+    const hash = await this.submitToHorizon(transaction);
+
+    await this.waitForLedgerConfirmation(hash);
+
+    return { transactionHash: hash };
+  }
+
   async submitRepayment(signedXdr: string): Promise<{ transactionHash: string }> {
     const transaction = this.parseTransaction(signedXdr);
 

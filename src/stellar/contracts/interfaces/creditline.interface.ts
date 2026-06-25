@@ -21,4 +21,9 @@ export interface ICreditLineClient {
     loanId: string,
     amount: number,
   ): Promise<string>;
+
+  buildDeclareDefaultTx(
+    callerWallet: string,
+    loanId: string,
+  ): Promise<string>;
 }

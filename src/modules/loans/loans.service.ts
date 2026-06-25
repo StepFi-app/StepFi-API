@@ -5,11 +5,16 @@ import {
   Logger,
   InternalServerErrorException,
   ServiceUnavailableException,
+  ConflictException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import * as StellarSdk from 'stellar-sdk';
+import { DEFAULT_GRACE_PERIOD_DAYS } from '../../jobs/default-detection/default-detection.constants';
 import { ReputationService } from '../reputation/reputation.service';
 import { SupabaseService } from '../../database/supabase.client';
 import { CreditLineContractClient } from '../../stellar/contracts/clients/creditline.client';
 import { ReputationContractClient } from '../../stellar/contracts/clients/reputation.client';
+import { BlockchainService } from '../blockchain/blockchain.service';
 import { LoanQuoteRequestDto } from './dto/loan-quote-request.dto';
 import { LoanQuoteResponseDto, SchedulePaymentDto } from './dto/loan-quote-response.dto';
 import { CreateLoanRequestDto } from './dto/create-loan-request.dto';
@@ -92,6 +97,8 @@ export class LoansService {
     private readonly creditLineContractClient: CreditLineContractClient,
     private readonly reputationContractClient: ReputationContractClient,
     private readonly creditScoringService: CreditScoringService,
+    private readonly blockchainService: BlockchainService,
+    private readonly configService: ConfigService,
   ) {}
 
   async calculateLoanQuote(
@@ -638,6 +645,192 @@ export class LoansService {
       assessment,
       previousStatus,
       currentStatus: newStatus,
+    };
+  }
+
+  /**
+   * Checks whether an active loan is overdue beyond the grace period and, if so,
+   * triggers an on-chain default declaration.
+   *
+   * Returns the detection result including whether the loan was defaulted.
+   */
+  async checkDefault(
+    wallet: string,
+    loanId: string,
+  ): Promise<{
+    loanId: string;
+    defaulted: boolean;
+    reason: string;
+    onChainTxHash?: string;
+  }> {
+    const client = this.supabaseService.getServiceRoleClient();
+    const { data: loan, error } = await client
+      .from('loans')
+      .select('id, loan_id, user_wallet, status, next_payment_due, remaining_balance')
+      .eq('id', loanId)
+      .single();
+
+    if (error || !loan) {
+      throw new NotFoundException({
+        code: 'LOAN_NOT_FOUND',
+        message: 'Loan not found. Please provide a valid loan ID.',
+      });
+    }
+
+    if (loan.user_wallet !== wallet) {
+      throw new NotFoundException({
+        code: 'LOAN_NOT_FOUND',
+        message: 'Loan not found. Please provide a valid loan ID.',
+      });
+    }
+
+    if (loan.status !== 'active') {
+      throw new BadRequestException({
+        code: 'LOAN_NOT_ACTIVE',
+        message: `Cannot check default on a loan with status '${loan.status}'. Only active loans can be checked.`,
+      });
+    }
+
+    if (!loan.next_payment_due) {
+      throw new BadRequestException({
+        code: 'LOAN_NO_DUE_DATE',
+        message: 'Loan has no next payment due date — cannot determine overdue status.',
+      });
+    }
+
+    const now = new Date();
+    const dueDate = new Date(loan.next_payment_due);
+    const daysOverdue = Math.floor(
+      (now.getTime() - dueDate.getTime()) / (24 * 60 * 60 * 1000),
+    );
+
+    if (daysOverdue < DEFAULT_GRACE_PERIOD_DAYS) {
+      return {
+        loanId: loan.loan_id,
+        defaulted: false,
+        reason: `Loan is ${daysOverdue} day(s) overdue — still within the ${DEFAULT_GRACE_PERIOD_DAYS}-day grace period.`,
+      };
+    }
+
+    if (Number(loan.remaining_balance) <= 0) {
+      return {
+        loanId: loan.loan_id,
+        defaulted: false,
+        reason: 'Loan has no remaining balance — cannot be defaulted.',
+      };
+    }
+
+    // Trigger on-chain default
+    const adminSecretKey = this.configService.get<string>('STELLAR_ADMIN_SECRET');
+    let onChainTxHash: string | undefined;
+
+    if (adminSecretKey) {
+      try {
+        const unsignedXdr = await this.creditLineContractClient.buildDeclareDefaultTx(
+          StellarSdk.Keypair.fromSecret(adminSecretKey).publicKey(),
+          loan.loan_id,
+        );
+
+        const keypair = StellarSdk.Keypair.fromSecret(adminSecretKey);
+        const networkPassphrase =
+          this.configService.get<string>('STELLAR_NETWORK_PASSPHRASE') ||
+          StellarSdk.Networks.TESTNET;
+
+        const transaction = StellarSdk.TransactionBuilder.fromXDR(
+          unsignedXdr,
+          networkPassphrase,
+        ) as StellarSdk.Transaction;
+
+        transaction.sign(keypair);
+        const signedXdr = transaction.toXDR();
+
+        const result = await this.blockchainService.submitTransaction(signedXdr);
+        onChainTxHash = result.transactionHash;
+
+        this.logger.log(
+          {
+            context: 'LoansService',
+            action: 'checkDefault',
+            loanId: loan.loan_id,
+            txHash: onChainTxHash,
+          },
+          `Loan ${loan.loan_id} declared defaulted on-chain in tx ${onChainTxHash}`,
+        );
+      } catch (error) {
+        this.logger.error(
+          {
+            context: 'LoansService',
+            action: 'checkDefault',
+            loanId: loan.loan_id,
+            error: error.message,
+          },
+          'On-chain default transaction failed — will still update Supabase',
+        );
+      }
+    } else {
+      this.logger.warn(
+        {
+          context: 'LoansService',
+          action: 'checkDefault',
+          loanId: loan.loan_id,
+        },
+        'STELLAR_ADMIN_SECRET not configured — updating Supabase without on-chain call',
+      );
+    }
+
+    // Update loan to defaulted
+    const nowIso = new Date().toISOString();
+    const { error: updateError } = await client
+      .from('loans')
+      .update({
+        status: 'defaulted',
+        defaulted_at: nowIso,
+        updated_at: nowIso,
+      })
+      .eq('id', loan.id)
+      .eq('status', 'active');
+
+    if (updateError) {
+      throw new InternalServerErrorException({
+        code: 'LOAN_DEFAULT_UPDATE_FAILED',
+        message: `Failed to update loan status to defaulted: ${updateError.message}`,
+      });
+    }
+
+    // Persist detection result
+    const { error: persistError } = await client
+      .from('default_detection_results')
+      .insert({
+        loan_id: loan.loan_id,
+        loan_db_id: loan.id,
+        user_wallet: loan.user_wallet,
+        status: 'detected',
+        reason: onChainTxHash
+          ? 'Default declared on-chain and Supabase updated (manual trigger)'
+          : 'Default recorded in database (no on-chain — admin key not configured)',
+        on_chain_tx_hash: onChainTxHash ?? null,
+        detected_at: nowIso,
+      });
+
+    if (persistError) {
+      this.logger.error(
+        {
+          context: 'LoansService',
+          action: 'checkDefault',
+          loanId: loan.loan_id,
+          error: persistError.message,
+        },
+        'Failed to persist default detection result',
+      );
+    }
+
+    return {
+      loanId: loan.loan_id,
+      defaulted: true,
+      reason: onChainTxHash
+        ? `Loan defaulted on-chain (tx: ${onChainTxHash}) and in database.`
+        : 'Loan defaulted in database. Configure STELLAR_ADMIN_SECRET for on-chain triggering.',
+      onChainTxHash,
     };
   }
 
