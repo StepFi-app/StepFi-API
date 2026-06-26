@@ -62,6 +62,8 @@ EAS build for Expo preview → then landing page → then GitHub issues → then
 
 ## In Progress
 
+- **Learner Profile Onboarding** — Extended profile table, added PATCH /learners/profile and GET /learners/profile/completion endpoints for rich onboarding. 
+
 - **Stellar.toml endpoint** — Added `GET /.well-known/stellar.toml` via `StellarTomlController` for Stellar ecosystem discoverability (Lobstr, StellarExpert). Returns TOML metadata with org info and 4 contract IDs. Cached in-memory with 1-hour TTL. (`stellar-toml.controller.ts`, `health.module.ts`, `stellar-toml.e2e-spec.ts`)
 
 ---

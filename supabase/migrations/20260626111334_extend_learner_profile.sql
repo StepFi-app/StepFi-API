@@ -1,0 +1,15 @@
+ALTER TABLE learner_profiles ADD COLUMN IF NOT EXISTS full_name VARCHAR(100);
+ALTER TABLE learner_profiles ADD COLUMN IF NOT EXISTS bio TEXT;
+ALTER TABLE learner_profiles ADD COLUMN IF NOT EXISTS country VARCHAR(60);
+ALTER TABLE learner_profiles ADD COLUMN IF NOT EXISTS city VARCHAR(60);
+ALTER TABLE learner_profiles ADD COLUMN IF NOT EXISTS current_role VARCHAR(50);
+ALTER TABLE learner_profiles ADD COLUMN IF NOT EXISTS institution VARCHAR(100);
+ALTER TABLE learner_profiles ADD COLUMN IF NOT EXISTS program VARCHAR(100);
+ALTER TABLE learner_profiles ADD COLUMN IF NOT EXISTS graduation_year INTEGER;
+ALTER TABLE learner_profiles ADD COLUMN IF NOT EXISTS skills TEXT[];
+ALTER TABLE learner_profiles ADD COLUMN IF NOT EXISTS finance_goals TEXT[];
+ALTER TABLE learner_profiles ADD COLUMN IF NOT EXISTS monthly_income_range VARCHAR(30);
+ALTER TABLE learner_profiles ADD COLUMN IF NOT EXISTS github_url VARCHAR(200);
+ALTER TABLE learner_profiles ADD COLUMN IF NOT EXISTS linkedin_url VARCHAR(200);
+ALTER TABLE learner_profiles ADD COLUMN IF NOT EXISTS profile_complete BOOLEAN DEFAULT FALSE;
+ALTER TABLE learner_profiles ADD COLUMN IF NOT EXISTS onboarding_completed_at TIMESTAMPTZ;
