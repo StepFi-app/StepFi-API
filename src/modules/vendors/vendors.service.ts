@@ -60,7 +60,7 @@ export class VendorsService {
 
     if (error) {
       this.logger.error(`Failed to list vendors: ${error.message}`);
-      throw new Error('Failed to list vendors.');
+      throw new InternalServerErrorException('Failed to list vendors.');
     }
 
     const rows: VendorRow[] = (data ?? []) as VendorRow[];

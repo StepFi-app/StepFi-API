@@ -3,6 +3,8 @@ import {
   Logger,
   NotFoundException,
   ConflictException,
+  BadRequestException, 
+  InternalServerErrorException
 } from '@nestjs/common';
 import { SupabaseService } from '../../database/supabase.client';
 import {
@@ -48,7 +50,7 @@ export class VouchingService {
 
     if (existingError) {
       this.logger.error(`Failed to check existing vouches: ${existingError.message}`);
-      throw new Error('Failed to check existing vouches.');
+      throw new InternalServerErrorException('Failed to check existing vouches.');
     }
 
     if (existing && existing.length > 0) {
@@ -73,10 +75,16 @@ export class VouchingService {
       .select()
       .single();
 
-    if (error || !data) {
-      this.logger.error(`Failed to insert vouch request: ${error?.message}`);
-      throw new Error('Failed to create vouch request.');
-    }
+   if (error) {
+  this.logger.error(`Failed to insert vouch request: ${error.message}`);
+  // Es un fallo del sistema/BD
+  throw new InternalServerErrorException('Failed to process vouch request internally.'); 
+}
+if (!data) {
+  this.logger.error(`Failed to insert vouch request: No data returned.`);
+  // Es un fallo por datos inválidos del cliente
+  throw new BadRequestException('Invalid vouch request data provided.');
+}
 
     this.logger.log(
       `Vouch requested: learner=${learnerWallet} mentor=${dto.mentorWallet}`,
@@ -144,7 +152,7 @@ export class VouchingService {
 
     if (error) {
       this.logger.error(`Failed to list learner vouches for ${wallet}: ${error.message}`);
-      throw new Error('Failed to list vouches.');
+      throw new InternalServerErrorException('Failed to list vouches.');
     }
 
     const rows = (data ?? []) as VouchRow[];
@@ -162,7 +170,7 @@ export class VouchingService {
 
     if (error) {
       this.logger.error(`Failed to list mentor vouches for ${wallet}: ${error.message}`);
-      throw new Error('Failed to list vouches.');
+      throw new InternalServerErrorException('Failed to list vouches.');
     }
 
     const rows = (data ?? []) as VouchRow[];
@@ -181,7 +189,7 @@ export class VouchingService {
 
     if (error) {
       this.logger.error(`Failed to fetch incoming requests for ${mentorWallet}: ${error.message}`);
-      throw new Error('Failed to fetch vouch requests.');
+      throw new InternalServerErrorException('Failed to fetch vouch requests.');
     }
 
     const rows = data ?? [];
