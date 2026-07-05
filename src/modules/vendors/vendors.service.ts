@@ -10,6 +10,7 @@ import { VendorsRepository } from '../../database/repositories/vendors.repositor
 import { VendorResponseDto, VendorType } from './dto/vendor.dto';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
 import { ApiKeyResponseDto, ApiKeyCreatedResponseDto } from './dto/api-key-response.dto';
+import { VendorListResponseDto } from './dto/vendor-list-response.dto';
 
 const API_KEY_PREFIX = 'sfi_';
 
@@ -48,15 +49,23 @@ export class VendorsService {
     private readonly vendorsRepository: VendorsRepository,
   ) {}
 
-  async getAll(type?: VendorType): Promise<VendorResponseDto[]> {
+  async getAll(
+    page: number = 1,
+    limit: number = 20,
+    type?: VendorType,
+  ): Promise<VendorListResponseDto> {
+    const offset = (page - 1) * limit;
     const client = this.supabaseService.getClient();
-    let query = client.from('vendors').select('*').order('created_at', { ascending: false });
+    let query = client
+      .from('vendors')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false });
 
     if (type) {
       query = query.eq('type', type);
     }
 
-    const { data, error } = await query;
+    const { data, error, count } = await query.range(offset, offset + limit - 1);
 
     if (error) {
       this.logger.error(`Failed to list vendors: ${error.message}`);
@@ -64,7 +73,18 @@ export class VendorsService {
     }
 
     const rows: VendorRow[] = (data ?? []) as VendorRow[];
-    return rows.map((row) => this.mapToDto(row));
+    const mappedData = rows.map((row) => this.mapToDto(row));
+
+    return {
+      success: true,
+      data: mappedData,
+      pagination: {
+        limit,
+        offset,
+        total: count ?? 0,
+      },
+      message: 'Vendors retrieved successfully',
+    };
   }
 
   async getById(id: string): Promise<VendorResponseDto> {

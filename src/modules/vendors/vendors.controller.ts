@@ -25,6 +25,8 @@ import { VendorsService } from './vendors.service';
 import { VendorResponseDto, VendorType } from './dto/vendor.dto';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
 import { ApiKeyResponseDto, ApiKeyCreatedResponseDto } from './dto/api-key-response.dto';
+import { VendorListQueryDto } from './dto/vendor-list-query.dto';
+import { VendorListResponseDto } from './dto/vendor-list-response.dto';
 
 @ApiTags('vendors')
 @Controller('vendors')
@@ -33,11 +35,13 @@ export class VendorsController {
 
   @Get()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'List all vendors, optionally filtered by type' })
+  @ApiOperation({ summary: 'List all vendors, optionally filtered by type with pagination' })
   @ApiQuery({ name: 'type', enum: VendorType, required: false })
-  @ApiResponse({ status: 200, description: 'List of vendors', type: [VendorResponseDto] })
-  async list(@Query('type') type?: VendorType): Promise<VendorResponseDto[]> {
-    return this.vendorsService.getAll(type);
+  @ApiQuery({ name: 'page', type: Number, required: false, description: 'Page number (default 1)' })
+  @ApiQuery({ name: 'limit', type: Number, required: false, description: 'Page size (default 20, max 100)' })
+  @ApiResponse({ status: 200, description: 'List of vendors with pagination', type: VendorListResponseDto })
+  async list(@Query() query: VendorListQueryDto): Promise<VendorListResponseDto> {
+    return this.vendorsService.getAll(query.page, query.limit, query.type);
   }
 
   @Get(':id')
