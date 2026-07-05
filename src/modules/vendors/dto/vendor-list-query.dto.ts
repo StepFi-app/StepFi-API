@@ -32,7 +32,7 @@ export class VendorListQueryDto {
     maximum: 100,
   })
   @IsOptional()
-  @Transform(({ value }) => parseInt(value, 10))
+  @Transform(({ value }) => (value === undefined ? 20 : Number(value)))
   @IsInt()
   @Min(1)
   @Max(100)
