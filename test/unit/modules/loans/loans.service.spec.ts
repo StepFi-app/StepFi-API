@@ -15,6 +15,7 @@ import { MockReputationContractClient } from '../../../../src/stellar/contracts/
 import { LoanListStatusFilter } from '../../../../src/modules/loans/dto/loan-list-query.dto';
 import { CreditScoringService } from '../../../../src/modules/credit-scoring/credit-scoring.service';
 import { CreditAssessmentResultDto } from '../../../../src/modules/credit-scoring/dto/credit-scoring-response.dto';
+import { LiquidityReservationService } from '../../../../src/modules/liquidity/reservations/liquidity-reservation.service';
 
 describe('LoansService', () => {
   let service: LoansService;
@@ -49,6 +50,14 @@ describe('LoansService', () => {
 
   const mockCreditScoringService = {
     assess: jest.fn(),
+  };
+
+  const mockLiquidityReservationService: Partial<LiquidityReservationService> = {
+    reserveForLoan: jest.fn(),
+    releaseForLoan: jest.fn(),
+    releaseReservation: jest.fn(),
+    getCurrentReservationTotal: jest.fn(),
+    reconcile: jest.fn(),
   };
 
   function mockReputation(score: number, tier: string, interestRate: number, maxCredit: number) {
@@ -93,6 +102,7 @@ describe('LoansService', () => {
         { provide: CreditLineContractClient, useClass: MockCreditLineContractClient },
         { provide: ReputationContractClient, useClass: MockReputationContractClient },
         { provide: CreditScoringService, useValue: mockCreditScoringService },
+        { provide: LiquidityReservationService, useValue: mockLiquidityReservationService },
       ],
     }).compile();
 
@@ -111,6 +121,15 @@ describe('LoansService', () => {
     mockSupabaseFrom.update.mockReturnThis();
     mockCreditLineContractClient.buildCreateLoanTransaction.mockResolvedValue('AAAAAgAAAAC...');
     mockCreditLineContractClient.buildRepayLoanTx.mockResolvedValue('AAAAAgAAAAA...');
+
+    // Default mock reservation behaviour for createLoan paths.
+    (mockLiquidityReservationService.reserveForLoan as jest.Mock).mockResolvedValue({
+      reservationId: 'resv-pending-1-uuid',
+      expiresAt: new Date(Date.now() + 900_000),
+      poolCapacityUsd: 10000,
+    });
+    (mockLiquidityReservationService.releaseReservation as jest.Mock).mockResolvedValue(true);
+    (mockLiquidityReservationService.releaseForLoan as jest.Mock).mockResolvedValue(false);
   });
 
   afterEach(() => {
@@ -285,16 +304,78 @@ describe('LoansService', () => {
       expect(result.assessment.decision).toBe('approved');
       expect(result.description).toBe('Create BNPL loan for $500 at TechStore');
       expect(result.terms.guarantee).toBe(100);
+      expect(result.reservationId).toBe('resv-pending-1-uuid');
+      expect(result.reservationPoolCapacityUsd).toBe(10000);
       expect(mockCreditLineContractClient.buildCreateLoanTransaction).toHaveBeenCalled();
       expect(mockSupabaseClient.from).toHaveBeenCalledWith('loans');
+      expect(mockLiquidityReservationService.reserveForLoan).toHaveBeenCalledWith(
+        expect.objectContaining({ wallet: validWallet, amountUsd: 400 }),
+      );
       expect(mockSupabaseFrom.insert).toHaveBeenCalledWith(
         expect.objectContaining({
           user_wallet: validWallet,
           vendor_id: vendorId,
           status: 'pending',
           next_payment_due: expect.any(String),
+          reservation_id: 'resv-pending-1-uuid',
+          reservation_expires_at: expect.any(String),
         }),
       );
+    });
+
+    it('should surface LIQUIDITY_RESERVATION_INSUFFICIENT without building an XDR', async () => {
+      (mockLiquidityReservationService.reserveForLoan as jest.Mock).mockRejectedValueOnce(
+        new BadRequestException({
+          code: 'LIQUIDITY_RESERVATION_INSUFFICIENT',
+          message: 'insufficient',
+        }),
+      );
+
+      await expect(service.createLoan(validWallet, baseDto)).rejects.toMatchObject({
+        response: { code: 'LIQUIDITY_RESERVATION_INSUFFICIENT' },
+      });
+      expect(mockCreditLineContractClient.buildCreateLoanTransaction).not.toHaveBeenCalled();
+      expect(mockSupabaseFrom.insert).not.toHaveBeenCalled();
+    });
+
+    it('should release the reservation when XDR construction fails', async () => {
+      mockCreditLineContractClient.buildCreateLoanTransaction.mockRejectedValue(
+        new Error('Soroban unavailable'),
+      );
+
+      await expect(service.createLoan(validWallet, baseDto)).rejects.toThrow(
+        InternalServerErrorException,
+      );
+
+      expect(mockLiquidityReservationService.releaseReservation).toHaveBeenCalledWith(
+        'resv-pending-1-uuid',
+      );
+    });
+
+    it('should release the reservation when DB persistence fails', async () => {
+      mockSupabaseFrom.insert.mockResolvedValue({
+        error: { message: 'insert failed' },
+      });
+
+      await expect(service.createLoan(validWallet, baseDto)).rejects.toThrow(
+        InternalServerErrorException,
+      );
+
+      expect(mockLiquidityReservationService.releaseReservation).toHaveBeenCalledWith(
+        'resv-pending-1-uuid',
+      );
+    });
+
+    it('should NOT acquire a reservation for under_review (manual review) loans', async () => {
+      mockAssessment('manual_review');
+
+      const result = await service.createLoan(validWallet, baseDto);
+
+      expect(result.reservationId).toBeNull();
+      expect(result.reservationExpiresAt).toBeNull();
+      expect(result.reservationPoolCapacityUsd).toBeNull();
+      expect(mockLiquidityReservationService.reserveForLoan).not.toHaveBeenCalled();
+      expect(mockLiquidityReservationService.releaseReservation).not.toHaveBeenCalled();
     });
 
     it('should reject loan creation when reputation is below minimum threshold', async () => {

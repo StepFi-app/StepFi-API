@@ -6,6 +6,19 @@ pure chore/docs commits). Direct pushes to main must also be logged here.
 
 ---
 
+## 2026-07-17
+
+- Liquidity reservation layer for concurrent `createLoan` (#81):
+  Redis ZSET-backed ledger with Lua-atomic acquire / release,
+  in-memory shim for tests + when no `REDIS_URL`, TTL auto-expiry
+  (default 15 min), @Cron reconciliation against on-chain
+  `locked_liquidity`, Prometheus metrics
+  (`stepfi_liquidity_reservations_*`), DB columns
+  `loans.reservation_id` + `loans.reservation_expires_at`, automatic
+  release on transaction-status finalisation (success OR failed),
+  plus unit/spec coverage including a deterministic concurrency test
+  proving no double-spend under parallel callers.
+
 ## 2026-07-16
 
 - Added wallet-bound user roles (sponsor/vendor/mentor): `role` column

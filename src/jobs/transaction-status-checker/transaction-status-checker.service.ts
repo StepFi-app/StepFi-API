@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from 'stellar-sdk';
 import { SupabaseService } from '../../database/supabase.client';
 import { TransactionType } from '../../modules/transactions/dto/submit-transaction-request.dto';
+import { LiquidityReservationService } from '../../modules/liquidity/reservations/liquidity-reservation.service';
 
 interface PendingTransaction {
   id: string;
@@ -56,6 +57,7 @@ export class TransactionStatusCheckerService {
   constructor(
     private readonly configService: ConfigService,
     private readonly supabaseService: SupabaseService,
+    private readonly reservationService: LiquidityReservationService,
   ) {
     const horizonUrl =
       this.configService.get<string>('STELLAR_HORIZON_URL') ||
@@ -329,6 +331,7 @@ export class TransactionStatusCheckerService {
     }
 
     const followUp = await this.applyFollowUpActions(transaction, status);
+    await this.releaseReservationIfApplicable(transaction, status);
     await this.createNotification(transaction, status, errorMessage, followUp);
 
     this.logger.log(
@@ -340,6 +343,51 @@ export class TransactionStatusCheckerService {
       },
       `Transaction ${transaction.transaction_hash} finalized as ${status}`,
     );
+  }
+
+  /**
+   * If the finalized transaction was a LOAN_CREATE, release the
+   * liquidity reservation attached to the loan. This holds for both
+   * success and failure finalizations: on success the on-chain
+   * settlement takes over the locked-funds accounting; on failure the
+   * funds must be made available for another borrower.
+   *
+   * Repayment transactions do not own a reservation, so they are a
+   * no-op here.
+   */
+  private async releaseReservationIfApplicable(
+    transaction: PendingTransaction,
+    status: 'success' | 'failed',
+  ): Promise<void> {
+    if (transaction.type !== TransactionType.LOAN_CREATE) {
+      return;
+    }
+    try {
+      const metadata = this.parseTransactionMetadata(transaction.xdr);
+      if (!metadata?.loanId) {
+        return;
+      }
+      const released = await this.reservationService.releaseForLoan(metadata.loanId);
+      this.logger.log(
+        {
+          transactionHash: transaction.transaction_hash,
+          loanId: metadata.loanId,
+          status,
+          released,
+        },
+        'Liquidity reservation cleanup after transaction finalisation',
+      );
+    } catch (error) {
+      // Reservation cleanup must never block the finalisation pipeline
+      // — the underlying reservation has its own TTL as a backstop.
+      this.logger.warn(
+        {
+          transactionHash: transaction.transaction_hash,
+          err: (error as Error).message,
+        },
+        'Failed to release reservation during transaction finalisation; relying on TTL expiry',
+      );
+    }
   }
 
   private async applyFollowUpActions(

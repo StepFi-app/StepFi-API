@@ -91,6 +91,25 @@ REDIS_DB=0
 REPUTATION_CACHE_TTL=300
 ```
 
+### Liquidity Reservation (issue #81)
+
+The reservation ledger that prevents concurrent `createLoan` callers
+from over-committing pool funds. Defaults to an in-process store when
+`REDIS_URL` is not set or `NODE_ENV=test`.
+
+```env
+# Optional override for the reservation-ledger Redis URL. Falls back
+# to REDIS_URL when unset.
+LIQUIDITY_RESERVATION_REDIS_URL=redis://localhost:6379
+
+# Pool identifier used when more than one pool is ever wired up.
+LIQUIDITY_RESERVATION_POOL_ID=default
+
+# Reservation TTL in seconds. After this window a non-submitted loan
+# simply expires and the funds return to the pool.
+LIQUIDITY_RESERVATION_TTL_SECONDS=900
+```
+
 ## Optional Variables
 
 ### Logging
@@ -274,4 +293,4 @@ REMINDER_CRON=0 9 * * *
 
 ---
 
-*Last Updated: 2026-02-13*
+*Last Updated: 2026-07-17*

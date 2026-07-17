@@ -10,6 +10,7 @@ import { ReputationService } from '../reputation/reputation.service';
 import { SupabaseService } from '../../database/supabase.client';
 import { CreditLineContractClient } from '../../stellar/contracts/clients/creditline.client';
 import { ReputationContractClient } from '../../stellar/contracts/clients/reputation.client';
+import { LiquidityReservationService } from '../liquidity/reservations/liquidity-reservation.service';
 import { LoanQuoteRequestDto } from './dto/loan-quote-request.dto';
 import { LoanQuoteResponseDto, SchedulePaymentDto } from './dto/loan-quote-response.dto';
 import { CreateLoanRequestDto } from './dto/create-loan-request.dto';
@@ -51,6 +52,8 @@ interface CreateLoanRecord {
   term: number;
   status: 'pending' | 'under_review';
   next_payment_due: string | null;
+  reservation_id?: string | null;
+  reservation_expires_at?: string | null;
 }
 
 interface LoanPaymentRow {
@@ -92,6 +95,7 @@ export class LoansService {
     private readonly creditLineContractClient: CreditLineContractClient,
     private readonly reputationContractClient: ReputationContractClient,
     private readonly creditScoringService: CreditScoringService,
+    private readonly reservationService: LiquidityReservationService,
   ) {}
 
   async calculateLoanQuote(
@@ -118,9 +122,34 @@ export class LoansService {
     }
 
     const status = assessment.decision === 'approved' ? 'pending' : 'under_review';
+
+    let reservation: {
+      reservationId: string;
+      expiresAt: Date;
+      poolCapacityUsd: number;
+    } | null = null;
+
     let xdr: string | null = null;
 
     if (status === 'pending') {
+      // Reserve pool liquidity BEFORE building the funding XDR so a
+      // second concurrent caller cannot pass the same availability
+      // check and end up producing a fund_loan that will revert with
+      // InsufficientLiquidity after the user has signed.
+      try {
+        reservation = await this.reservationService.reserveForLoan({
+          loanId,
+          wallet,
+          amountUsd: terms.loanAmount,
+        });
+      } catch (error) {
+        // reservation errors are already structured; surface them
+        this.logger.error(
+          `Reservation refused for ${loanId}: ${(error as Error).message ?? 'unknown error'}`,
+        );
+        throw error;
+      }
+
       try {
         xdr = await this.creditLineContractClient.buildCreateLoanTransaction(wallet, {
           loanId,
@@ -133,6 +162,7 @@ export class LoansService {
         });
       } catch (error) {
         this.logger.error(`Failed to build create_loan XDR for ${loanId}: ${error.message}`);
+        await this.releaseReservationQuietly(reservation, loanId);
         throw new InternalServerErrorException({
           code: 'BLOCKCHAIN_CREATE_LOAN_XDR_FAILED',
           message: 'Failed to construct unsigned loan transaction. Please try again.',
@@ -154,9 +184,12 @@ export class LoansService {
         term: terms.term,
         status,
         next_payment_due: terms.schedule[0]?.dueDate ?? null,
+        reservation_id: reservation?.reservationId ?? null,
+        reservation_expires_at: reservation?.expiresAt.toISOString() ?? null,
       });
     } catch (error) {
       this.logger.error(`Failed to persist pending loan ${loanId}: ${error.message}`);
+      await this.releaseReservationQuietly(reservation, loanId);
       throw new InternalServerErrorException({
         code: 'DATABASE_CREATE_LOAN_FAILED',
         message: 'Failed to persist pending loan record. Please try again.',
@@ -169,7 +202,34 @@ export class LoansService {
       description,
       terms,
       assessment,
+      reservationId: reservation?.reservationId ?? null,
+      reservationExpiresAt: reservation?.expiresAt.toISOString() ?? null,
+      reservationPoolCapacityUsd: reservation?.poolCapacityUsd ?? null,
     };
+  }
+
+  /**
+   * Best-effort release of a freshly-acquired reservation so that an
+   * error in buildCreateLoanTransaction or persistPendingLoan does not
+   * strand pool capacity until the TTL expires.
+   */
+  private async releaseReservationQuietly(
+    reservation: { reservationId: string } | null,
+    loanId: string,
+  ): Promise<void> {
+    if (!reservation) {
+      return;
+    }
+    try {
+      const released = await this.reservationService.releaseReservation(reservation.reservationId);
+      if (!released) {
+        await this.reservationService.releaseForLoan(loanId);
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to release reservation ${reservation.reservationId} for ${loanId}: ${(error as Error).message}`,
+      );
+    }
   }
 
   async buildRepaymentXdr(

@@ -14,6 +14,7 @@ import { VouchingModule } from './modules/vouching/vouching.module';
 import { BlockchainModule } from './modules/blockchain/blockchain.module';
 import { SponsorsModule } from './modules/sponsors/sponsors.module';
 import { LiquidityModule } from './modules/liquidity/liquidity.module';
+import { ReservationsModule } from './modules/liquidity/reservations/reservations.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
 import { LearnersModule } from './modules/learners/learners.module';
@@ -52,6 +53,7 @@ import { CorrelationIdMiddleware } from './common/logger/correlation-id.middlewa
     BlockchainModule,
     SponsorsModule,
     LiquidityModule,
+    ReservationsModule,
     NotificationsModule,
     TransactionsModule,
     LearnersModule,

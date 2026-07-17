@@ -34,4 +34,28 @@ export class CreateLoanResponseDto {
     nullable: true,
   })
   assessment: CreditAssessmentResultDto | null;
+
+  @ApiProperty({
+    description:
+      'Liquidity reservation handle that proves the pool has committed the requested amount until the loan settles (or auto-expires).',
+    example: 'resv-pending-1711180800000-ab12cd34-1f9b2d4a-...',
+    nullable: true,
+  })
+  reservationId: string | null;
+
+  @ApiProperty({
+    description:
+      'ISO 8601 timestamp at which the reservation auto-releases if the loan has not been confirmed on-chain by then.',
+    example: '2026-07-17T12:34:56.000Z',
+    nullable: true,
+  })
+  reservationExpiresAt: string | null;
+
+  @ApiProperty({
+    description:
+      'Effective pool capacity (in USD) used during the reservation check. Useful for the UI to display remaining headroom.',
+    example: 8420.5,
+    nullable: true,
+  })
+  reservationPoolCapacityUsd: number | null;
 }

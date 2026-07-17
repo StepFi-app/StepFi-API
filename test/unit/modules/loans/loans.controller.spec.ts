@@ -39,8 +39,11 @@ describe('LoansController', () => {
     loanId: 'pending-1711180800000-ab12cd34',
     xdr: 'AAAAAgAAAAC...',
     description: 'Create BNPL loan for $500 at TechStore',
-    terms: mockQuoteResponse as any,
+    terms: mockQuoteResponse as CreateLoanResponseDto['terms'],
     assessment: null,
+    reservationId: 'resv-pending-1711180800000-ab12cd34-uuid',
+    reservationExpiresAt: '2026-07-17T13:34:56.000Z',
+    reservationPoolCapacityUsd: 10000,
   };
 
   beforeEach(async () => {
