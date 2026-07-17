@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HealthService } from '../../../../src/modules/health/health.service';
 import { SupabaseService } from '../../../../src/database/supabase.client';
-import { ConfigService } from '@nestjs/config';
+import { HorizonClientService } from '../../../../src/stellar/horizon-client.service';
 import { getQueueToken } from '@nestjs/bullmq';
 
 describe('HealthService', () => {
@@ -19,6 +19,21 @@ describe('HealthService', () => {
     getServiceRoleClient: jest.fn(() => mockSupabaseClient),
   };
 
+  const mockHorizonClientService = {
+    getRoot: jest.fn().mockResolvedValue({
+      horizon_version: '2.0.0',
+      network: 'testnet',
+      core_version: 'v22.0.0',
+      history_latest_ledger: 12345,
+    }),
+    getEndpointStatuses: jest.fn().mockReturnValue([
+      { url: 'https://horizon-testnet.stellar.org', status: 'closed', failureCount: 0, lastFailure: null, isPrimary: true },
+    ]),
+    getNetworkPassphrase: jest.fn().mockReturnValue('Test SDF Network ; September 2015'),
+    submitTransaction: jest.fn(),
+    getTransaction: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -28,10 +43,8 @@ describe('HealthService', () => {
           useValue: mockSupabaseService,
         },
         {
-          provide: ConfigService,
-          useValue: {
-            get: jest.fn((key: string, defaultValue: any) => defaultValue),
-          },
+          provide: HorizonClientService,
+          useValue: mockHorizonClientService,
         },
         {
           provide: getQueueToken('blockchain-indexer'),
