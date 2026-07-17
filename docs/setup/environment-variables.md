@@ -142,6 +142,28 @@ TX_STATUS_INTERVAL=15
 REMINDER_CRON=0 9 * * *
 ```
 
+### Server-signed Stellar submissions (sequence manager)
+
+These variables let the API itself submit Stellar transactions for loan
+funding, default detection, and admin operations. Without the source
+account secret, `BlockchainService.submitServerTransaction` is disabled
+and the API can still run in read-only / frontend-only mode.
+
+```env
+# Secret key (S…) of the protocol source account that signs server txs.
+# REQUIRED — leave unset only for read-only deployments.
+STELLAR_SOURCE_ACCOUNT_SECRET=S...
+
+# Optional comma-separated list of channel-account secret keys (S…) for
+# concurrent in-flight submissions. Each channel maintains its own
+# sequence number so they never collide. Funded separately.
+STELLAR_CHANNEL_ACCOUNTS=S...,S...
+
+# Max attempts (re-syncs from Horizon) before the manager gives up on
+# tx_bad_seq. Default 3 (one initial attempt + three retries).
+STELLAR_BAD_SEQ_MAX_RETRIES=3
+```
+
 ### Monitoring (Optional)
 
 ```env

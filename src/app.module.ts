@@ -23,6 +23,7 @@ import { TransactionStatusCheckerModule } from './jobs/transaction-status-checke
 import { NonceCleanupModule } from './jobs/nonce-cleanup/nonce-cleanup.module';
 import { SupabaseKeepAliveModule } from './jobs/supabase-keepalive/supabase-keepalive.module';
 import { StellarModule } from './stellar/stellar.module';
+import { SequenceManagerModule } from './blockchain/sequence-manager/sequence-manager.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { CreditScoringModule } from './modules/credit-scoring/credit-scoring.module';
@@ -63,6 +64,7 @@ import { CorrelationIdMiddleware } from './common/logger/correlation-id.middlewa
     CreditScoringModule,
     AdminModule,
     StellarModule,
+    SequenceManagerModule,
   ],
   controllers: [],
   providers: [

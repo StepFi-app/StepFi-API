@@ -6,6 +6,30 @@ pure chore/docs commits). Direct pushes to main must also be logged here.
 
 ---
 
+## 2026-07-17
+
+- Implemented Stellar sequence-number manager (#82):
+  - `src/blockchain/sequence-manager/sequence-manager.service.ts` —
+    serializes per-account submissions via an in-memory promise chain,
+    caches the next sequence number, re-syncs from Horizon on
+    `tx_bad_seq` or restart, supports a configurable channel-account
+    pool for concurrent in-flight transactions, exposes Prometheus
+    metrics (`blockchain_source_submissions_in_flight`,
+    `blockchain_source_bad_seq_retries_total`,
+    `blockchain_source_submissions_total`,
+    `blockchain_source_next_sequence`).
+  - `BlockchainService.submitServerTransaction` is the new public
+    surface; the existing user-signed `submitRepayment` path is
+    unchanged.
+  - Config honours `STELLAR_SOURCE_ACCOUNT_SECRET` (required),
+    `STELLAR_CHANNEL_ACCOUNTS` (optional comma-separated secrets),
+    and `STELLAR_BAD_SEQ_MAX_RETRIES` (default 3).
+  - Concurrency test asserts 10 parallel callers each receive a
+    unique monotonic sequence number without `tx_bad_seq`.
+  - No new dependencies; uses the existing `prom-client`,
+    `@nestjs/schedule`, and the `stellar-sdk` already in
+    `package.json`. Schema unchanged — no Supabase migration required.
+
 ## 2026-07-16
 
 - Added wallet-bound user roles (sponsor/vendor/mentor): `role` column

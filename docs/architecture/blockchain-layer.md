@@ -71,3 +71,26 @@ export class ReputationContractClient {
 4. Mobile signs the transaction
 5. Mobile sends signed XDR back
 6. API sends transaction to network using `soroban.client.ts`
+
+## Server-signed submissions
+
+Server-initiated transactions (default detection, admin ops, future
+loan-funding paths) use `SequenceManagerService` in
+`src/blockchain/sequence-manager/`. Submissions go through a managed
+source account whose sequence number is:
+
+- Refreshed from Horizon on first use and on every `tx_bad_seq`
+  rejection, so a stale local counter can never wedge the protocol.
+- Serialized per-account through an in-memory promise chain so two
+  concurrent callers cannot double-spend the same sequence.
+- Optionally fan out across a `STELLAR_CHANNEL_ACCOUNTS` pool for true
+  parallel in-flight transactions; each channel has its own counter.
+
+`BlockchainService.submitServerTransaction(spec)` is the public
+entrypoint. `spec.build` receives an `Account` already pre-populated
+with the source-account id and the next sequence number; the manager
+signs and submits, exposing Prometheus counters
+(`blockchain_source_submissions_in_flight`,
+`blockchain_source_bad_seq_retries_total`,
+`blockchain_source_submissions_total`,
+`blockchain_source_next_sequence`).
