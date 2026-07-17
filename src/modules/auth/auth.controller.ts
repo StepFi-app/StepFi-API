@@ -15,7 +15,8 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { AuthService } from './auth.service';
+import { AuthService, RegisterResponse } from './auth.service';
+import { UploadedAvatarFile } from '../../database/repositories/users.repository';
 import { NonceRequestDto } from './dto/nonce-request.dto';
 import { NonceResponseDto } from './dto/nonce-response.dto';
 import { VerifyRequestDto } from './dto/verify-request.dto';
@@ -54,8 +55,8 @@ export class AuthController {
         fileIsRequired: false,
       }),
     )
-    profileImage?: any,
-  ): Promise<any> {
+    profileImage?: UploadedAvatarFile,
+  ): Promise<RegisterResponse> {
     return this.authService.register(dto, profileImage);
   }
 

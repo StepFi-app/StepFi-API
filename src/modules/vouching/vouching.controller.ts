@@ -2,7 +2,10 @@ import {
   Controller,
   Post,
   Get,
+  Delete,
+  Param,
   Body,
+  ParseUUIDPipe,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -11,6 +14,7 @@ import {
   ApiTags,
   ApiOperation,
   ApiResponse,
+  ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { VouchingService } from './vouching.service';
@@ -18,8 +22,10 @@ import {
   ApproveVouchDto,
   RequestVouchDto,
   VouchResponseDto,
+  VouchRequestItemDto,
 } from './dto/vouch.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { Roles, RolesGuard } from '../../auth/guards/roles.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('vouching')
@@ -42,6 +48,8 @@ export class VouchingController {
   }
 
   @Post('approve')
+  @UseGuards(RolesGuard)
+  @Roles('mentor')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Mentor approves a pending vouch request' })
   @ApiResponse({ status: 200, description: 'Vouch approved', type: VouchResponseDto })
@@ -64,6 +72,8 @@ export class VouchingController {
   }
 
   @Get('mentor')
+  @UseGuards(RolesGuard)
+  @Roles('mentor')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get vouches the current mentor has given' })
   @ApiResponse({ status: 200, description: 'List of vouches given', type: [VouchResponseDto] })
@@ -71,5 +81,33 @@ export class VouchingController {
     @CurrentUser() user: { wallet: string },
   ): Promise<VouchResponseDto[]> {
     return this.vouchingService.getMentorVouches(user.wallet);
+  }
+
+  @Get('requests')
+  @UseGuards(RolesGuard)
+  @Roles('mentor')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get incoming vouch requests for the authenticated mentor' })
+  @ApiResponse({ status: 200, description: 'List of pending vouch requests', type: [VouchRequestItemDto] })
+  async getRequests(
+    @CurrentUser() user: { wallet: string },
+  ): Promise<VouchRequestItemDto[]> {
+    return this.vouchingService.getIncomingRequests(user.wallet);
+  }
+
+  @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles('mentor')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Mentor revokes a vouch they created' })
+  @ApiParam({ name: 'id', description: 'Vouch UUID' })
+  @ApiResponse({ status: 200, description: 'Vouch revoked', type: VouchResponseDto })
+  @ApiResponse({ status: 403, description: 'Not the mentor who created this vouch' })
+  @ApiResponse({ status: 404, description: 'Vouch not found' })
+  async revokeVouch(
+    @CurrentUser() user: { wallet: string },
+    @Param('id', ParseUUIDPipe) vouchId: string,
+  ): Promise<VouchResponseDto> {
+    return this.vouchingService.revokeVouch(user.wallet, vouchId);
   }
 }

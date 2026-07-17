@@ -1,10 +1,9 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
-import { Job } from 'bullmq';
 import * as StellarSdk from 'stellar-sdk';
-import { SupabaseService } from '../../database/supabase.client';
-import { SorobanService } from '../../blockchain/soroban/soroban.service';
+import { SupabaseService } from '../database/supabase.client';
+import { SorobanService } from '../blockchain/soroban/soroban.service';
 import { EventParserService } from './event-parser.service';
 import {
   ParsedContractEvent,
@@ -16,18 +15,13 @@ import {
   ScoreChangedPayload,
 } from './interfaces';
 
-/**
- * BullMQ processor for the `blockchain-indexer` queue.
- *
- * On every invocation (every 30 s) it:
- *  1. Reads the last indexed ledger per contract from `indexer_cursor`.
- *  2. Fetches new Soroban events since that ledger.
- *  3. Parses, deduplicates, and persists them to the database.
- *  4. Updates the cursor so the next run resumes correctly.
- */
-@Processor('blockchain-indexer')
-export class BlockchainIndexerProcessor extends WorkerHost {
-  private readonly logger = new Logger(BlockchainIndexerProcessor.name);
+@Injectable()
+export class IndexerService {
+  private readonly logger = new Logger(IndexerService.name);
+  private isRunning = false;
+
+  private static readonly LEDGER_RETENTION_BUFFER = 100_000;
+  private static readonly CATCH_UP_BUFFER = 1_000;
 
   private readonly loanContractId: string;
   private readonly reputationContractId: string;
@@ -38,99 +32,122 @@ export class BlockchainIndexerProcessor extends WorkerHost {
     private readonly supabaseService: SupabaseService,
     private readonly eventParser: EventParserService,
   ) {
-    super();
     this.loanContractId =
       this.configService.get<string>('CREDIT_LINE_CONTRACT_ID') || '';
     this.reputationContractId =
       this.configService.get<string>('REPUTATION_CONTRACT_ID') || '';
   }
 
-  // -------------------------------------------------------------------------
-  // Worker entry point
-  // -------------------------------------------------------------------------
+  @Cron('*/60 * * * * *')
+  async runIndexer(): Promise<void> {
+    if (this.isRunning) {
+      this.logger.debug('Indexer already running, skipping');
+      return;
+    }
+    this.isRunning = true;
 
-  async process(_job: Job): Promise<void> {
-    this.logger.log({
-      context: 'BlockchainIndexerProcessor',
-      action: 'process',
-    }, 'Blockchain indexer job started');
+    this.logger.log('Blockchain indexer cycle started');
 
+    try {
+      await this.indexLoanContract();
+      await this.indexReputationContract();
+    } catch (error) {
+      this.logger.error({ error: error.message, stack: error.stack }, 'Indexer cycle failed');
+    } finally {
+      this.isRunning = false;
+    }
+
+    this.logger.log('Blockchain indexer cycle completed');
+  }
+
+  private async indexLoanContract(): Promise<void> {
     try {
       await this.indexContract(this.loanContractId, 'loan');
     } catch (error) {
-      this.logger.error({
-        context: 'BlockchainIndexerProcessor',
-        action: 'indexLoanContract',
-        error: error.message,
-        stack: error.stack,
-      }, 'Failed to index loan contract events — will retry next cycle');
+      this.logger.error(
+        { error: error.message, stack: error.stack },
+        'Failed to index loan contract events — will retry next cycle',
+      );
     }
+  }
 
+  private async indexReputationContract(): Promise<void> {
     try {
       await this.indexContract(this.reputationContractId, 'reputation');
     } catch (error) {
-      this.logger.error({
-        context: 'BlockchainIndexerProcessor',
-        action: 'indexReputationContract',
-        error: error.message,
-        stack: error.stack,
-      }, 'Failed to index reputation contract events — will retry next cycle');
+      this.logger.error(
+        { error: error.message, stack: error.stack },
+        'Failed to index reputation contract events — will retry next cycle',
+      );
     }
-
-    this.logger.log({
-      context: 'BlockchainIndexerProcessor',
-      action: 'process',
-    }, 'Blockchain indexer job completed');
   }
-
-  // -------------------------------------------------------------------------
-  // Contract indexing
-  // -------------------------------------------------------------------------
 
   private async indexContract(
     contractId: string,
     label: string,
   ): Promise<void> {
     if (!contractId) {
-      this.logger.warn(
-        `Skipping ${label} contract indexing — contract ID not configured`,
-      );
+      this.logger.warn(`Skipping ${label} contract indexing — contract ID not configured`);
       return;
     }
 
     const cursor = await this.getCursor(contractId);
-    const startLedger = cursor + 1;
+    let startLedger = cursor > 0 ? cursor + 1 : 1;
 
-    this.logger.debug({
-      context: 'BlockchainIndexerProcessor',
-      action: 'indexContract',
-      contractId: contractId.slice(0, 8) + '...',
-      label,
-      startLedger,
-    }, `Polling for ${label} events from ledger ${startLedger}`);
+    this.logger.log(`Starting cycle for ${label}, cursor: ${cursor}, startLedger: ${startLedger}`);
 
-    const rawEvents = await this.fetchEvents(contractId, startLedger);
-
-    if (rawEvents.length === 0) {
-      this.logger.debug(`No new ${label} events found`);
+    // Get network tip first so we always have something to persist
+    let latestLedger: number;
+    try {
+      latestLedger = await this.getLatestNetworkLedger();
+      this.logger.log(`Latest network ledger for ${label}: ${latestLedger}`);
+    } catch (error) {
+      this.logger.warn(
+        { error: error.message, label },
+        `Could not get latest network ledger for ${label} — will retry next cycle`,
+      );
       return;
     }
 
-    this.logger.log({
-      context: 'BlockchainIndexerProcessor',
-      action: 'indexContract',
-      label,
-      eventCount: rawEvents.length,
-    }, `Found ${rawEvents.length} new ${label} event(s)`);
+    // Proactive self-heal: fast-forward cursor if it's outside retention window
+    startLedger = await this.healStaleCursor(contractId, startLedger, latestLedger, label);
 
-    let maxLedger = cursor;
+    this.logger.log(`Fetching ${label} events from ledger ${startLedger} to ${latestLedger}`);
+
+    let rawEvents: StellarSdk.SorobanRpc.Api.EventResponse[];
+    try {
+      rawEvents = await this.fetchEvents(contractId, startLedger, latestLedger);
+      this.logger.log(`Fetched ${rawEvents.length} raw ${label} events (startLedger=${startLedger})`);
+    } catch (error) {
+      this.logger.error(
+        { error: error.message, stack: error.stack, label, startLedger },
+        `fetchEvents failed for ${label}`,
+      );
+      if (await this.recoverFromRangeError(contractId, error, label)) {
+        return;
+      }
+      throw error;
+    }
+
+    if (rawEvents.length === 0) {
+      this.logger.log(`No new ${label} events found — advancing cursor to latest ledger ${latestLedger}`);
+      await this.updateCursor(contractId, latestLedger);
+      return;
+    }
+
+    this.logger.log(`Processing ${rawEvents.length} ${label} events`);
+
+    let maxLedger = startLedger;
     let successCount = 0;
     let errorCount = 0;
 
     for (const rawEvent of rawEvents) {
       try {
         const parsed = this.eventParser.parseEvent(rawEvent);
-        if (!parsed) continue;
+        if (!parsed) {
+          this.logger.debug(`Skipping unparsed ${label} event: ${rawEvent.id}`);
+          continue;
+        }
 
         await this.persistEvent(parsed);
         successCount++;
@@ -139,38 +156,32 @@ export class BlockchainIndexerProcessor extends WorkerHost {
           maxLedger = parsed.ledgerSequence;
         }
 
-        this.logger.log({
-          context: 'BlockchainIndexerProcessor',
-          action: 'eventIndexed',
-          eventType: parsed.type,
-          eventId: parsed.eventId,
-          txHash: parsed.txHash,
-          ledger: parsed.ledgerSequence,
-          timestamp: new Date().toISOString(),
-        }, `Indexed ${parsed.type} event`);
+        this.logger.log(
+          { eventType: parsed.type, eventId: parsed.eventId, txHash: parsed.txHash, ledger: parsed.ledgerSequence },
+          `Indexed ${parsed.type} event for ${label}`,
+        );
       } catch (error) {
         errorCount++;
-        this.logger.error({
-          context: 'BlockchainIndexerProcessor',
-          action: 'persistEvent',
-          error: error.message,
-          eventId: rawEvent?.id,
-        }, 'Failed to persist event — skipping');
+        this.logger.error(
+          { error: error.message, eventId: rawEvent?.id, label },
+          'Failed to persist event — skipping',
+        );
       }
     }
 
-    // Update cursor to the highest ledger we successfully processed
-    if (maxLedger > cursor) {
-      await this.updateCursor(contractId, maxLedger);
-    }
+    this.logger.log(
+      `Persisting cursor for ${label} — maxLedger=${maxLedger}, latestLedger=${latestLedger}, currentCursor=${cursor}`,
+    );
 
-    this.logger.log({
-      context: 'BlockchainIndexerProcessor',
-      action: 'indexContractComplete',
-      label,
-      successCount,
-      errorCount,
-    }, `Finished indexing ${label}: ${successCount} ok, ${errorCount} failed`);
+    // Always advance cursor past what we've seen: use the network tip if events
+    // stopped before it, or the highest processed event ledger if it's behind.
+    const targetLedger = Math.max(maxLedger, latestLedger);
+    this.logger.log(`Updating ${label} cursor to ${targetLedger} (successCount=${successCount})`);
+    await this.updateCursor(contractId, targetLedger);
+
+    this.logger.log(
+      `Finished indexing ${label}: ${successCount} ok, ${errorCount} failed, cursor now ${targetLedger}`,
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -180,8 +191,15 @@ export class BlockchainIndexerProcessor extends WorkerHost {
   private async fetchEvents(
     contractId: string,
     startLedger: number,
+    latestLedger: number,
   ): Promise<StellarSdk.SorobanRpc.Api.EventResponse[]> {
+    if (startLedger > latestLedger) {
+      this.logger.debug(`startLedger (${startLedger}) > latestLedger (${latestLedger}) — nothing to fetch`);
+      return [];
+    }
+
     const server = this.sorobanService.getServer();
+    this.logger.log(`Calling server.getEvents for contract ${contractId.slice(0, 8)}... startLedger=${startLedger}`);
 
     const response = await server.getEvents({
       startLedger,
@@ -194,7 +212,9 @@ export class BlockchainIndexerProcessor extends WorkerHost {
       limit: 100,
     });
 
-    return response.events ?? [];
+    const events = response.events ?? [];
+    this.logger.log(`server.getEvents returned ${events.length} events for startLedger=${startLedger}`);
+    return events;
   }
 
   // -------------------------------------------------------------------------
@@ -219,10 +239,6 @@ export class BlockchainIndexerProcessor extends WorkerHost {
     }
   }
 
-  /**
-   * Inserts a new loan record into `loan_index`.
-   * Idempotent: `event_id` has a unique constraint — conflicts are ignored.
-   */
   private async persistLoanCreated(
     event: ParsedContractEvent<LoanCreatedPayload>,
   ): Promise<void> {
@@ -244,7 +260,6 @@ export class BlockchainIndexerProcessor extends WorkerHost {
     );
 
     if (error) {
-      // 23505 = unique_violation — means this event was already indexed (idempotent)
       if (error.code === '23505') {
         this.logger.debug(`Duplicate LOAN_CREATED event ${event.eventId} — skipping`);
         return;
@@ -253,17 +268,12 @@ export class BlockchainIndexerProcessor extends WorkerHost {
     }
   }
 
-  /**
-   * Inserts a payment record and updates the loan's remaining balance.
-   * Idempotent: `(tx_hash, loan_id)` has a unique constraint.
-   */
   private async persistLoanRepaid(
     event: ParsedContractEvent<LoanRepaidPayload>,
   ): Promise<void> {
     const { payload } = event;
     const db = this.supabaseService.getServiceRoleClient();
 
-    // 1. Insert payment record
     const { error: paymentError } = await db.from('payment_index').insert({
       loan_id: payload.loanId,
       tx_hash: payload.txHash,
@@ -281,8 +291,6 @@ export class BlockchainIndexerProcessor extends WorkerHost {
       throw new Error(`Failed to persist LOAN_REPAID payment: ${paymentError.message}`);
     }
 
-    // 2. Update loan_index: reduce the remaining balance proxy
-    //    We recalculate from all payments for atomicity
     const { data: payments, error: sumError } = await db
       .from('payment_index')
       .select('amount')
@@ -300,7 +308,6 @@ export class BlockchainIndexerProcessor extends WorkerHost {
       0,
     );
 
-    // Fetch loan to determine if fully repaid
     const { data: loan } = await db
       .from('loan_index')
       .select('principal_amount, interest_amount')
@@ -321,10 +328,6 @@ export class BlockchainIndexerProcessor extends WorkerHost {
     }
   }
 
-  /**
-   * Updates loan status to `defaulted`.
-   * Idempotent: setting status to 'defaulted' is a no-op if already set.
-   */
   private async persistLoanDefaulted(
     event: ParsedContractEvent<LoanDefaultedPayload>,
   ): Promise<void> {
@@ -343,17 +346,12 @@ export class BlockchainIndexerProcessor extends WorkerHost {
     }
   }
 
-  /**
-   * Inserts a reputation change into `reputation_history` and updates `reputation_cache`.
-   * Idempotent: `event_id` has a unique constraint on `reputation_history`.
-   */
   private async persistScoreChanged(
     event: ParsedContractEvent<ScoreChangedPayload>,
   ): Promise<void> {
     const { payload } = event;
     const db = this.supabaseService.getServiceRoleClient();
 
-    // 1. Insert history record
     const { error: historyError } = await db.from('reputation_history').insert({
       event_id: event.eventId,
       user_wallet: payload.wallet,
@@ -373,7 +371,6 @@ export class BlockchainIndexerProcessor extends WorkerHost {
       throw new Error(`Failed to persist SCORE_CHANGED history: ${historyError.message}`);
     }
 
-    // 2. Update reputation_cache with latest score
     const { error: cacheError } = await db
       .from('reputation_cache')
       .update({
@@ -383,63 +380,124 @@ export class BlockchainIndexerProcessor extends WorkerHost {
       .eq('wallet_address', payload.wallet);
 
     if (cacheError) {
-      // Non-fatal: cache update failure should not block event processing
-      this.logger.warn({
-        context: 'BlockchainIndexerProcessor',
-        action: 'updateReputationCache',
-        error: cacheError.message,
-        wallet: payload.wallet,
-      }, 'Failed to update reputation cache — history was saved');
+      this.logger.warn(
+        { error: cacheError.message, wallet: payload.wallet },
+        'Failed to update reputation cache — history was saved',
+      );
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Self-healing cursor recovery
+  // -------------------------------------------------------------------------
+
+  private async getLatestNetworkLedger(): Promise<number> {
+    const { sequence } = await this.sorobanService.getServer().getLatestLedger();
+    return sequence;
+  }
+
+  private async healStaleCursor(
+    contractId: string,
+    startLedger: number,
+    latestLedger: number,
+    label: string,
+  ): Promise<number> {
+    const minValidLedger = latestLedger - IndexerService.LEDGER_RETENTION_BUFFER;
+
+    this.logger.log(
+      `healStaleCursor check for ${label}: startLedger=${startLedger}, latestLedger=${latestLedger}, minValid=${minValidLedger}`,
+    );
+
+    if (startLedger >= minValidLedger) {
+      this.logger.log(`Cursor for ${label} is healthy — no heal needed`);
+      return startLedger;
+    }
+
+    const catchUpLedger = latestLedger - IndexerService.CATCH_UP_BUFFER;
+
+    this.logger.warn(
+      { label, startLedger, catchUpLedger, latestLedger },
+      `Stale cursor detected for ${label}. Jumping from ${startLedger} directly to ${catchUpLedger} (latest: ${latestLedger})`,
+    );
+
+    this.logger.log(`Persisting healed cursor for ${label}: ${catchUpLedger - 1}`);
+    await this.updateCursor(contractId, catchUpLedger - 1);
+    return catchUpLedger;
+  }
+
+  private async recoverFromRangeError(
+    contractId: string,
+    error: unknown,
+    label: string,
+  ): Promise<boolean> {
+    const message = error instanceof Error ? error.message : String(error);
+
+    if (!message.includes('startLedger must be within')) {
+      return false;
+    }
+
+    const match = message.match(/(\d+)\s*-\s*(\d+)/);
+    if (!match) {
+      return false;
+    }
+
+    const minValidLedger = parseInt(match[1], 10);
+
+    this.logger.warn(
+      { label, minValidLedger },
+      `Ledger out of range for ${label}. Auto-correcting cursor to ${minValidLedger}.`,
+    );
+
+    await this.updateCursor(contractId, minValidLedger - 1);
+    return true;
   }
 
   // -------------------------------------------------------------------------
   // Cursor management
   // -------------------------------------------------------------------------
 
-  /**
-   * Reads the last indexed ledger for a contract from `indexer_cursor`.
-   * Returns 0 if no cursor exists (first run).
-   */
   async getCursor(contractId: string): Promise<number> {
     const db = this.supabaseService.getServiceRoleClient();
 
     const { data, error } = await db
-      .from('indexer_cursor')
+      .from('indexer_state')
       .select('last_ledger')
       .eq('contract_id', contractId)
       .single();
 
     if (error || !data) {
+      this.logger.log(`No existing cursor for contract ${contractId.slice(0, 8)}... — starting from 0`);
       return 0;
     }
 
     return Number(data.last_ledger);
   }
 
-  /**
-   * Upserts the cursor for a contract to the given ledger sequence.
-   */
   async updateCursor(contractId: string, ledger: number): Promise<void> {
     const db = this.supabaseService.getServiceRoleClient();
+    const ts = new Date().toISOString();
 
-    const { error } = await db.from('indexer_cursor').upsert(
+    this.logger.log(
+      `Upserting cursor for ${contractId.slice(0, 8)}... to ledger ${ledger} at ${ts}`,
+    );
+
+    const { error } = await db.from('indexer_state').upsert(
       {
         contract_id: contractId,
         last_ledger: ledger,
-        updated_at: new Date().toISOString(),
+        updated_at: ts,
       },
       { onConflict: 'contract_id' },
     );
 
     if (error) {
-      this.logger.error({
-        context: 'BlockchainIndexerProcessor',
-        action: 'updateCursor',
-        error: error.message,
-        contractId,
-        ledger,
-      }, 'Failed to update indexer cursor');
+      this.logger.error(
+        { error: error.message, contractId: contractId.slice(0, 8) + '...', ledger },
+        'Failed to update indexer cursor',
+      );
+      throw new Error(`Failed to update indexer cursor: ${error.message}`);
     }
+
+    this.logger.log(`Cursor updated successfully for ${contractId.slice(0, 8)}... to ledger ${ledger}`);
   }
 }

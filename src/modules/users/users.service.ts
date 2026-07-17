@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { UsersRepository, UserPreferencesRecord } from '../../database/repositories/users.repository';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { UsersRepository, UserPreferencesRecord, UserRole } from '../../database/repositories/users.repository';
 import { UserProfileDto, UserPreferencesDto } from './dto/user-response.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserProfileDto } from './dto/user-profile.dto';
+import { SetRoleResponseDto } from './dto/set-role.dto';
 
 /**
  * Handles all business logic for the users module.
@@ -42,9 +43,41 @@ export class UsersService {
             wallet: user.wallet_address,
             name: user.display_name,
             avatar: user.avatar_url,
+            role: user.role ?? null,
             preferences: this.mapPreferences(preferences),
             createdAt: user.created_at,
         };
+    }
+
+    /**
+     * Sets the user's permanent role — allowed exactly once per wallet.
+     *
+     * The write itself is atomic (`UPDATE ... WHERE role IS NULL` in the
+     * repository), so concurrent requests cannot both succeed. The read
+     * beforehand only exists to distinguish "role already set" (409) from
+     * "user does not exist" (404) in the error response.
+     *
+     * @param wallet - Stellar wallet address extracted from the JWT
+     * @param role   - Validated role value: sponsor | vendor | mentor
+     */
+    async setRole(wallet: string, role: UserRole): Promise<SetRoleResponseDto> {
+        const updated = await this.usersRepository.setRoleIfUnset(wallet, role);
+
+        if (!updated) {
+            const existingRole = await this.usersRepository.findRoleByWallet(wallet);
+            if (existingRole) {
+                throw new ConflictException({
+                    code: 'USERS_ROLE_ALREADY_SET',
+                    message: 'Role already set for this wallet and cannot be changed.',
+                });
+            }
+            throw new NotFoundException({
+                code: 'USERS_NOT_FOUND',
+                message: 'User not found.',
+            });
+        }
+
+        return { wallet: updated.wallet_address, role: updated.role };
     }
 
     /**

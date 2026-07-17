@@ -3,8 +3,10 @@ import {
   Logger,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { SupabaseService } from '../../database/supabase.client';
+import { LiquidityPoolContractClient } from '../../stellar/contracts/clients/liquidity-pool.client';
 import {
   CreateSponsorDto,
   SponsorDepositDto,
@@ -32,6 +34,13 @@ interface SponsorAggregateRow {
   locked: string | number | null;
 }
 
+interface PoolOverview {
+  totalDeposited: number;
+  totalShares: number;
+  utilizationBps: number;
+  apyBps: number;
+}
+
 const toNumber = (value: string | number | null | undefined): number => {
   if (value === null || value === undefined) {
     return 0;
@@ -39,11 +48,18 @@ const toNumber = (value: string | number | null | undefined): number => {
   return typeof value === 'number' ? value : Number(value);
 };
 
+const STROOPS = 10_000_000n;
+const LP_FEE_RATIO = 0.85;
+const MIN_WITHDRAWAL_SHARES = 1;
+
 @Injectable()
 export class SponsorsService {
   private readonly logger = new Logger(SponsorsService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly liquidityClient: LiquidityPoolContractClient,
+  ) {}
 
   async register(
     wallet: string,
@@ -94,11 +110,8 @@ export class SponsorsService {
     wallet: string,
     dto: SponsorDepositDto,
   ): Promise<{ unsignedXdr: string }> {
-    // TODO: wire to LiquidityContractClient when contracts are deployed.
-    this.logger.log(
-      `Sponsor deposit requested: wallet=${wallet} amount=${dto.amount} (placeholder XDR)`,
-    );
-    return { unsignedXdr: 'PENDING_CONTRACT_INTEGRATION' };
+    const unsignedXdr = await this.buildDepositXdr(wallet, dto.amount);
+    return { unsignedXdr };
   }
 
   async getMyPool(wallet: string): Promise<SponsorResponseDto> {
@@ -148,6 +161,94 @@ export class SponsorsService {
       totalDeposited: totals.totalDeposited,
       totalAvailable: totals.totalAvailable,
       totalLocked: totals.totalLocked,
+    };
+  }
+
+  async getPool(): Promise<PoolOverview> {
+    const [poolStats, activeLoansData] = await Promise.all([
+      this.liquidityClient.getPoolStats(),
+      this.getActiveLoans(),
+    ]);
+
+    const totalDeposited = Number(poolStats.totalLiquidity) / Number(STROOPS);
+    const totalShares = Number(poolStats.totalShares) / Number(STROOPS);
+
+    const totalLoaned = activeLoansData.totalLoaned;
+    const utilizationBps =
+      totalDeposited > 0
+        ? Math.round((totalLoaned / totalDeposited) * 10_000)
+        : 0;
+
+    const apyBps = Math.round(activeLoansData.estimatedApy * 100);
+
+    return {
+      totalDeposited,
+      totalShares,
+      utilizationBps,
+      apyBps,
+    };
+  }
+
+  async buildDepositXdr(wallet: string, amount: number): Promise<string> {
+    if (amount <= 0) {
+      throw new BadRequestException({
+        code: 'VALIDATION_INVALID_AMOUNT',
+        message: 'Deposit amount must be greater than zero.',
+      });
+    }
+
+    const amountInStroops = BigInt(Math.round(amount * Number(STROOPS)));
+    return this.liquidityClient.buildDepositTx(wallet, amountInStroops);
+  }
+
+  async buildWithdrawXdr(wallet: string, shares: number): Promise<string> {
+    if (shares < MIN_WITHDRAWAL_SHARES) {
+      throw new BadRequestException({
+        code: 'VALIDATION_INVALID_SHARES',
+        message: `Withdrawal shares must be at least ${MIN_WITHDRAWAL_SHARES}.`,
+      });
+    }
+
+    const sharesInStroops = BigInt(Math.round(shares * Number(STROOPS)));
+    return this.liquidityClient.buildWithdrawTx(wallet, sharesInStroops);
+  }
+
+  private async getActiveLoans(): Promise<{
+    totalLoaned: number;
+    estimatedApy: number;
+  }> {
+    const client = this.supabaseService.getServiceRoleClient();
+
+    const { data, error } = await client
+      .from('loans')
+      .select('loan_amount, interest_rate')
+      .eq('status', 'active');
+
+    if (error || !data || data.length === 0) {
+      if (error) {
+        this.logger.warn(`Failed to fetch active loans: ${error.message}`);
+      }
+      return { totalLoaned: 0, estimatedApy: 0 };
+    }
+
+    const totalAmount = data.reduce(
+      (sum, loan) => sum + Number(loan.loan_amount),
+      0,
+    );
+    const weightedRate =
+      totalAmount > 0
+        ? data.reduce(
+            (sum, loan) =>
+              sum +
+              Number(loan.interest_rate) *
+                (Number(loan.loan_amount) / totalAmount),
+            0,
+          )
+        : 0;
+
+    return {
+      totalLoaned: totalAmount,
+      estimatedApy: Math.round(weightedRate * LP_FEE_RATIO * 100) / 100,
     };
   }
 

@@ -9,7 +9,7 @@ export class CorrelationIdMiddleware implements NestMiddleware {
       (req.headers['x-correlation-id'] as string) ||
       (req.headers['x-request-id'] as string) ||
       randomUUID();
-    (req as any).correlationId = correlationId;
+    (req as FastifyRequest & { correlationId?: string }).correlationId = correlationId;
     next();
   }
 }

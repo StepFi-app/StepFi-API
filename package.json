@@ -24,7 +24,6 @@
     "@fastify/multipart": "^10.0.0",
     "@fastify/static": "^9.1.3",
     "@modelcontextprotocol/sdk": "^1.28.0",
-    "@nestjs/bullmq": "^11.0.0",
     "@nestjs/cache-manager": "^3.1.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/config": "^4.0.0",
@@ -33,12 +32,12 @@
     "@nestjs/passport": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
     "@nestjs/platform-fastify": "^11.0.0",
+    "@nestjs/schedule": "^6.1.3",
     "@nestjs/swagger": "^11.0.0",
     "@nestjs/throttler": "^6.0.0",
     "@sentry/nestjs": "^10.10.0",
     "@supabase/supabase-js": "^2.45.0",
     "@willsoto/nestjs-prometheus": "^6.1.0",
-    "bullmq": "^5.12.0",
     "cache-manager": "^7.2.8",
     "cache-manager-redis-store": "^3.0.1",
     "class-transformer": "^0.5.1",
@@ -55,7 +54,7 @@
     "prom-client": "^15.1.3",
     "reflect-metadata": "^0.2.1",
     "rxjs": "^7.8.1",
-    "stellar-sdk": "^11.2.0",
+    "stellar-sdk": "^11.3.0",
     "ws": "^8.20.0",
     "zod": "^3.23.0"
   },
@@ -95,10 +94,15 @@
     "rootDir": "test",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.ts$": [
+        "ts-jest",
+        {
+          "diagnostics": false
+        }
+      ]
     },
     "collectCoverageFrom": [
-      "../src/**/*.(t|j)s"
+      "../src/**/*.{t,j}s"
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node",

@@ -18,6 +18,7 @@ import {
   ApiParam,
   ApiQuery,
 } from '@nestjs/swagger';
+import { BlockchainService } from '../blockchain/blockchain.service';
 import { LoansService } from './loans.service';
 import { LoanQuoteRequestDto } from './dto/loan-quote-request.dto';
 import { LoanQuoteResponseDto } from './dto/loan-quote-response.dto';
@@ -28,13 +29,17 @@ import { LoanPaymentResponseDto } from './dto/loan-payment-response.dto';
 import { AvailableCreditResponseDto } from './dto/available-credit-response.dto';
 import { LoanListQueryDto, LoanListStatusFilter } from './dto/loan-list-query.dto';
 import { LoanListResponseDto } from './dto/loan-list-response.dto';
+import { LoanStatsResponseDto } from './dto/loan-stats-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('loans')
 @Controller('loans')
 export class LoansController {
-  constructor(private readonly loansService: LoansService) {}
+  constructor(
+    private readonly loansService: LoansService,
+    private readonly blockchainService: BlockchainService,
+  ) {}
 
   @Post('quote')
   @HttpCode(HttpStatus.OK)
@@ -59,6 +64,22 @@ export class LoansController {
   ) {
     const data = await this.loansService.calculateLoanQuote(user.wallet, dto);
     return { success: true, data, message: 'Loan quote calculated successfully' };
+  }
+
+  @Get('stats')
+  @ApiOperation({
+    summary: 'Get protocol-wide loan statistics',
+    description:
+      'Returns aggregated loan counts and volume across all users. No authentication required.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Loan statistics retrieved successfully',
+    type: LoanStatsResponseDto,
+  })
+  async getStats() {
+    const data = await this.loansService.getStats();
+    return { success: true, data, message: 'Loan statistics retrieved successfully' };
   }
 
   @Get('my-loans')
@@ -184,5 +205,77 @@ export class LoansController {
   ) {
     const data = await this.loansService.repayLoan(user.wallet, loanId, dto);
     return { success: true, data, message: 'Repayment transaction constructed successfully' };
+  }
+
+  @Post(':loanId/repay')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiParam({
+    name: 'loanId',
+    description: 'UUID of the loan being repaid',
+    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+  })
+  @ApiOperation({
+    summary: 'Submit signed repayment transaction',
+    description:
+      'Accepts a signed Soroban repay_installment() XDR transaction, submits it to the Stellar network, and waits for ledger confirmation. Returns the transaction hash on success.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Repayment transaction submitted and confirmed',
+    schema: {
+      properties: {
+        success: { type: 'boolean', example: true },
+        data: {
+          properties: {
+            transactionHash: {
+              type: 'string',
+              example: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+            },
+          },
+        },
+        message: { type: 'string', example: 'Repayment submitted and confirmed successfully' },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Invalid XDR or loan state' })
+  @ApiResponse({ status: 401, description: 'Unauthorized - missing or invalid JWT' })
+  @ApiResponse({ status: 503, description: 'Stellar network unavailable or confirmation timeout' })
+  async submitRepayment(
+    @Param('loanId', ParseUUIDPipe) loanId: string,
+    @Body('xdr') signedXdr: string,
+  ) {
+    const data = await this.blockchainService.submitRepayment(signedXdr);
+    return { success: true, data, message: 'Repayment submitted and confirmed successfully' };
+  }
+
+  @Post(':loanId/assess')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiParam({
+    name: 'loanId',
+    description: 'UUID of the loan to assess',
+    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+  })
+  @ApiOperation({
+    summary: 'Run credit assessment on a loan',
+    description:
+      'Runs the credit scoring pipeline on a pending or under_review loan and updates its status based on the assessment result. Auto-approved loans stay pending, auto-rejected loans are marked rejected, and edge cases are flagged for manual review.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Loan assessed successfully',
+  })
+  @ApiResponse({ status: 400, description: 'Loan cannot be assessed in its current status' })
+  @ApiResponse({ status: 401, description: 'Unauthorized - missing or invalid JWT' })
+  @ApiResponse({ status: 404, description: 'Loan not found or does not belong to user' })
+  async assessLoan(
+    @CurrentUser() user: { wallet: string },
+    @Param('loanId', ParseUUIDPipe) loanId: string,
+  ) {
+    const data = await this.loansService.assessLoan(user.wallet, loanId);
+    return { success: true, data, message: 'Loan assessment completed successfully' };
   }
 }

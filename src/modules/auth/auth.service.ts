@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes } from 'crypto';
 import { Keypair, StrKey } from 'stellar-sdk';
 import { SupabaseService } from '../../database/supabase.client';
-import { UsersRepository } from '../../database/repositories/users.repository';
+import { UsersRepository, UploadedAvatarFile } from '../../database/repositories/users.repository';
 import { NonceResponseDto } from './dto/nonce-response.dto';
 import { VerifyRequestDto } from './dto/verify-request.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
@@ -23,6 +23,17 @@ import {
 
 const NONCE_EXPIRATION_SECONDS = 300;
 
+export interface RegisterResponse extends AuthResponseDto {
+  user: {
+    id: string;
+    walletAddress: string;
+    username: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    createdAt: string;
+  };
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -32,7 +43,7 @@ export class AuthService {
     private readonly usersRepository: UsersRepository,
   ) {}
 
-  async register(dto: RegisterRequestDto, profileImage?: any): Promise<any> {
+  async register(dto: RegisterRequestDto, profileImage?: UploadedAvatarFile): Promise<RegisterResponse> {
     const existingWallet = await this.usersRepository.findByWallet(dto.walletAddress);
     if (existingWallet) {
       throw new ConflictException({ code: 'AUTH_WALLET_EXISTS', message: 'Wallet address is already registered.' });
@@ -100,7 +111,26 @@ export class AuthService {
     }
     try {
       const keypair = Keypair.fromPublicKey(dto.wallet);
-      const isValid = keypair.verify(Buffer.from(dto.nonce), Buffer.from(dto.signature, 'base64'));
+
+      let isValid = false;
+
+      // First attempt: raw Ed25519 signature (mobile clients)
+      try {
+        isValid = keypair.verify(Buffer.from(dto.nonce), Buffer.from(dto.signature, 'base64'));
+      } catch (e) {
+        isValid = false;
+      }
+
+      // If raw verification failed, try SEP-0043 (browser wallets like Freighter)
+      if (!isValid) {
+        try {
+          const sepMessage = 'Stellar Signing Key: ' + dto.nonce;
+          isValid = keypair.verify(Buffer.from(sepMessage), Buffer.from(dto.signature, 'base64'));
+        } catch (e) {
+          isValid = false;
+        }
+      }
+
       if (!isValid) {
         throw new UnauthorizedException({ code: 'AUTH_SIGNATURE_INVALID', message: 'Invalid signature.' });
       }
@@ -111,12 +141,12 @@ export class AuthService {
     await client.from('nonces').update({ used_at: new Date().toISOString() }).eq('id', nonceRecord.id);
   }
 
-  private async findOrCreateUser(wallet: string): Promise<string> {
+  private async findOrCreateUser(wallet: string): Promise<{ id: string; role: string | null }> {
     const client = this.supabaseService.getServiceRoleClient();
     const { data: user, error } = await client
       .from('users')
       .upsert({ wallet_address: wallet, last_seen_at: new Date().toISOString() }, { onConflict: 'wallet_address' })
-      .select('id, status')
+      .select('id, status, role')
       .single();
     if (error || !user) {
       throw new InternalServerErrorException({ code: 'DATABASE_USER_UPSERT_FAILED', message: 'Failed to create or update user.' });
@@ -124,14 +154,16 @@ export class AuthService {
     if (user.status === 'blocked') {
       throw new UnauthorizedException({ code: 'AUTH_USER_BLOCKED', message: 'This account has been suspended.' });
     }
-    return user.id;
+    return { id: user.id, role: user.role ?? null };
   }
 
   async generateTokens(wallet: string): Promise<AuthResponseDto> {
-    const userId = await this.findOrCreateUser(wallet);
+    const { id: userId, role } = await this.findOrCreateUser(wallet);
     const client = this.supabaseService.getServiceRoleClient();
+    // Role is read fresh from the users table on every token generation,
+    // so POST /auth/refresh naturally mints a token with the latest role.
     const accessToken = this.jwtService.sign(
-      { wallet, type: 'access' },
+      { wallet, type: 'access', role },
       { secret: this.configService.get<string>('JWT_SECRET'), expiresIn: ACCESS_TOKEN_EXPIRATION },
     );
     const refreshToken = this.jwtService.sign(
@@ -152,7 +184,7 @@ export class AuthService {
   }
 
   async refreshTokens(refreshToken: string): Promise<AuthResponseDto> {
-    let payload: any;
+    let payload: { type?: string; wallet?: string };
     try {
       payload = this.jwtService.verify(refreshToken, {
         secret: this.configService.get<string>('JWT_REFRESH_SECRET'),

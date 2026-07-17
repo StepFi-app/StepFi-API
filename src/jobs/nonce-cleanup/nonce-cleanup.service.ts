@@ -1,26 +1,33 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { SupabaseService } from '../../database/supabase.client';
 
 @Injectable()
-export class NonceCleanupService implements OnModuleInit {
+export class NonceCleanupService {
   private readonly logger = new Logger(NonceCleanupService.name);
 
-  constructor(
-    @InjectQueue('nonce-cleanup') private readonly queue: Queue,
-  ) {}
+  constructor(private readonly supabaseService: SupabaseService) {}
 
-  async onModuleInit() {
-    await this.queue.remove('nonce-cleanup-job');
-    await this.queue.add(
-      'nonce-cleanup-job',
-      {},
-      {
-        repeat: { pattern: '0 * * * *' }, // Every hour
-        removeOnComplete: { count: 10 },
-        removeOnFail: { count: 50 },
-      },
-    );
-    this.logger.log('Nonce cleanup job scheduled — runs every hour');
+  @Cron(CronExpression.EVERY_HOUR)
+  async cleanupExpiredNonces(): Promise<void> {
+    try {
+      const client = this.supabaseService.getServiceRoleClient();
+
+      const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+      const { error, count } = await client
+        .from('nonces')
+        .delete({ count: 'exact' })
+        .lt('expires_at', cutoff);
+
+      if (error) {
+        this.logger.error(`Failed to delete expired nonces: ${error.message}`);
+        throw error;
+      }
+
+      this.logger.log(`Deleted ${count ?? 0} expired nonces`);
+    } catch (error) {
+      this.logger.error('Nonce cleanup failed', error);
+    }
   }
 }

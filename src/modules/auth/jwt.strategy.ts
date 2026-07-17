@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 interface JwtPayload {
   wallet: string;
   type: string;
+  role?: string | null;
   iat: number;
   exp: number;
 }
@@ -36,7 +37,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
    * @param payload - Decoded JWT payload
    * @returns User object containing the wallet address
    */
-  validate(payload: JwtPayload): { wallet: string } {
+  validate(payload: JwtPayload): { wallet: string; role: string | null } {
     if (payload.type !== 'access') {
       throw new UnauthorizedException({
         code: 'AUTH_TOKEN_INVALID',
@@ -44,6 +45,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       });
     }
 
-    return { wallet: payload.wallet };
+    // Tokens issued before the role claim existed simply carry role: null;
+    // RolesGuard will deny role-gated routes until the client refreshes.
+    return { wallet: payload.wallet, role: payload.role ?? null };
   }
 }

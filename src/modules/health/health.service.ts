@@ -20,9 +20,33 @@ export class HealthService {
     @InjectQueue('nonce-cleanup')
     private readonly nonceCleanupQueue: Queue,
   ) {}
+  ) {
+    this.horizonUrl =
+      this.configService.get<string>('STELLAR_HORIZON_URL') ||
+      'https://horizon-testnet.stellar.org';
+  }
 
   async check() {
-    // ... rest of code remains the same
+    const [db, horizon, indexer] = await Promise.all([
+      this.checkDatabase(),
+      this.checkHorizon(),
+      this.checkIndexerLag(),
+    ]);
+
+    const allOk = [db, horizon, indexer].every(
+      (c) => c.status === 'ok',
+    );
+
+    return {
+      status: allOk ? 'ok' : 'degraded',
+      timestamp: new Date().toISOString(),
+      service: 'StepFi API',
+      checks: {
+        database: db,
+        horizon: horizon,
+        indexer: indexer,
+      },
+    };
   }
 
   async checkDatabase() {
@@ -47,6 +71,7 @@ export class HealthService {
     }
   }
 
+  async checkHorizon(): Promise<Record<string, unknown>> {
   async checkHorizon(): Promise<{ status: string; [key: string]: unknown }> {
     try {
       const root = await this.horizonClientService.getRoot();
@@ -70,8 +95,7 @@ export class HealthService {
     }
   }
 
-
-  async checkIndexerLag(): Promise<Record<string, unknown>> {
+  async checkIndexerLag(): Promise<{ status: string; [key: string]: unknown }> {
     try {
       const cursor = await this.getIndexerCursor();
       const root = await this.horizonClientService.getRoot();
@@ -84,38 +108,6 @@ export class HealthService {
     }
   }
 
-  async checkBullMQ() {
-    try {
-      const queues = [this.indexerQueue, this.paymentRemindersQueue, this.txStatusQueue, this.nonceCleanupQueue];
-      const results = await Promise.all(
-        queues.map(async (q) => {
-          const [waiting, active, delayed, failed] = await Promise.all([
-            q.getWaitingCount(),
-            q.getActiveCount(),
-            q.getDelayedCount(),
-            q.getFailedCount(),
-          ]);
-          return { queue: q.name, waiting, active, delayed, failed };
-        }),
-      );
-      const allHealthy = results.every((r) => r.active < 10 && r.failed < 100);
-      return { status: allHealthy ? 'ok' : 'warning', queues: results };
-    } catch (error) {
-      return { status: 'error', message: error.message };
-    }
-  }
-
-  async checkRedis() {
-    try {
-      const queue = this.indexerQueue;
-      const client = await queue.client;
-      const ping = await client.ping();
-      return { status: ping === 'PONG' ? 'ok' : 'error', message: 'Redis reachable' };
-    } catch (error) {
-      return { status: 'error', message: error.message };
-    }
-  }
-
   async checkDatabaseMinimal() {
     return this.checkDatabase();
   }
@@ -124,7 +116,7 @@ export class HealthService {
     try {
       const db = this.supabaseService.getServiceRoleClient();
       const { data } = await db
-        .from('indexer_cursor')
+        .from('indexer_state')
         .select('last_ledger')
         .order('updated_at', { ascending: false })
         .limit(1)
