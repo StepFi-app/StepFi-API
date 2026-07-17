@@ -79,6 +79,7 @@ describe('UsersService', () => {
                 wallet: mockExistingUser.wallet_address,
                 name: mockExistingUser.display_name,
                 avatar: mockExistingUser.avatar_url,
+                role: null,
                 preferences: {
                     notifications: mockPreferences.notifications_enabled,
                     theme: mockPreferences.theme,

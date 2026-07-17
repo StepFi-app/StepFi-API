@@ -57,7 +57,8 @@ export function setupSwagger(app: INestApplication): void {
     .addTag('vouching', 'Mentor vouching system for credit limit boosts')
     .addTag('transactions', 'Stellar transaction submission and status tracking')
     .addTag('notifications', 'User notifications — list, read, mark as read')
-    .addTag('health', 'System health checks (database, Horizon, indexer, Redis, BullMQ)')
+    .addTag('health', 'System health checks (database, Horizon, indexer)')
+    .addTag('stellar', 'Stellar ecosystem metadata (stellar.toml)')
     .build();
 
   const document = SwaggerModule.createDocument(app, config, { deepScanRoutes: true });

@@ -243,6 +243,21 @@ describe('AuthService', () => {
       );
     });
 
+    it('should verify using SEP-0043 if raw verification fails', async () => {
+      const { mockKeypair } = setupMocks({ signatureValid: false });
+      // First call (raw) returns false, second call (sep0043) should return true
+      mockKeypair.verify.mockImplementationOnce(() => false).mockImplementationOnce(() => true);
+
+      await expect(service.verifySignature(validDto)).resolves.toBeUndefined();
+
+      expect(Keypair.fromPublicKey).toHaveBeenCalledWith(validWallet);
+      expect(mockKeypair.verify).toHaveBeenCalledWith(Buffer.from(validNonce), Buffer.from(validSignature, 'base64'));
+      expect(mockKeypair.verify).toHaveBeenCalledWith(
+        Buffer.from('Stellar Signing Key: ' + validNonce),
+        Buffer.from(validSignature, 'base64'),
+      );
+    });
+
     it('should mark nonce as used after successful verification', async () => {
       const { } = setupMocks();
       await service.verifySignature(validDto);
@@ -294,7 +309,7 @@ describe('AuthService', () => {
       await service.generateTokens(validWallet);
 
       expect(mockJwtService.sign).toHaveBeenCalledWith(
-        { wallet: validWallet, type: 'access' },
+        { wallet: validWallet, type: 'access', role: null },
         expect.objectContaining({ expiresIn: '15m' }),
       );
     });
@@ -395,7 +410,7 @@ describe('AuthService', () => {
     });
 
     it('should register a new user successfully with profile image', async () => {
-      const mockFile = { buffer: Buffer.from('test'), mimetype: 'image/png' };
+      const mockFile = { originalname: 'avatar.png', buffer: Buffer.from('test'), mimetype: 'image/png' };
       const result = await service.register(registerDto, mockFile);
 
       expect(mockUsersRepository.uploadAvatar).toHaveBeenCalledWith(validWallet, mockFile);

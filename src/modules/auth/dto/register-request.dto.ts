@@ -28,5 +28,5 @@ export class RegisterRequestDto {
 
   @ApiPropertyOptional({ type: 'string', format: 'binary', description: 'Profile image (JPEG, PNG, WebP, max 2MB)' })
   @IsOptional()
-  profileImage?: any;
+  profileImage?: unknown;
 }

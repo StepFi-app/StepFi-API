@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { StellarModule } from '../../stellar/stellar.module';
 import { HealthController } from './health.controller';
+import { StellarTomlController } from './stellar-toml.controller';
 import { HealthService } from './health.service';
 import { SupabaseService } from '../../database/supabase.client';
 

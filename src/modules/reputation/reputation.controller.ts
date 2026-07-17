@@ -22,6 +22,27 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 export class ReputationController {
     constructor(private readonly reputationService: ReputationService) { }
 
+    @Get('me')
+    @UseGuards(JwtAuthGuard)
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Get reputation score for the authenticated user' })
+    @ApiResponse({
+        status: 200,
+        description: 'Reputation data retrieved successfully',
+        type: ReputationResponseDto,
+    })
+    @ApiResponse({ status: 401, description: 'Unauthorized — missing or invalid JWT' })
+    async getMyScore(@Request() req: { user?: { wallet?: string } }) {
+        const wallet = req.user?.wallet;
+        const data = await this.reputationService.getReputationScore(wallet);
+
+        return {
+            success: true,
+            data,
+            message: 'Your reputation data retrieved successfully',
+        };
+    }
+
     @Get(':wallet')
     @ApiOperation({ summary: 'Get reputation score for a specific wallet address' })
     @ApiParam({
@@ -50,27 +71,6 @@ export class ReputationController {
             success: true,
             data,
             message: 'Reputation data retrieved successfully',
-        };
-    }
-
-    @Get('me')
-    @UseGuards(JwtAuthGuard)
-    @ApiBearerAuth()
-    @ApiOperation({ summary: 'Get reputation score for the authenticated user' })
-    @ApiResponse({
-        status: 200,
-        description: 'Reputation data retrieved successfully',
-        type: ReputationResponseDto,
-    })
-    @ApiResponse({ status: 401, description: 'Unauthorized — missing or invalid JWT' })
-    async getMyScore(@Request() req: any) {
-        const wallet = req.user?.wallet;
-        const data = await this.reputationService.getReputationScore(wallet);
-
-        return {
-            success: true,
-            data,
-            message: 'Your reputation data retrieved successfully',
         };
     }
 }

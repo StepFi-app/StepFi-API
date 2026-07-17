@@ -305,9 +305,14 @@ describe('LiquidityService', () => {
       const result = await service.getPoolOverview();
 
       expect(result).toEqual({
+        totalDeposits: 2000,
         totalLiquidity: 2000,
+        lockedLiquidity: 500,
+        availableLiquidity: 1500,
+        totalShares: 1800,
+        sharePrice: 1.1111,
         apy: 7.14,
-        utilization: 50,
+        utilization: 25,
         totalInvestors: 4,
         activeLoans: 2,
       });
@@ -341,6 +346,11 @@ describe('LiquidityService', () => {
       const result = await service.getPoolOverview();
 
       expect(result.totalLiquidity).toBe(0);
+      expect(result.lockedLiquidity).toBe(0);
+      expect(result.availableLiquidity).toBe(0);
+      expect(result.totalShares).toBe(0);
+      expect(result.sharePrice).toBe(1);
+      expect(result.totalDeposits).toBe(0);
       expect(result.utilization).toBe(0);
       expect(result.apy).toBe(0);
       expect(result.activeLoans).toBe(0);

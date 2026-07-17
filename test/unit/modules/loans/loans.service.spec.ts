@@ -13,6 +13,8 @@ import { ReputationContractClient } from '../../../../src/stellar/contracts/clie
 import { MockCreditLineContractClient } from '../../../../src/stellar/contracts/mocks/creditline.mock';
 import { MockReputationContractClient } from '../../../../src/stellar/contracts/mocks/reputation.mock';
 import { LoanListStatusFilter } from '../../../../src/modules/loans/dto/loan-list-query.dto';
+import { CreditScoringService } from '../../../../src/modules/credit-scoring/credit-scoring.service';
+import { CreditAssessmentResultDto } from '../../../../src/modules/credit-scoring/dto/credit-scoring-response.dto';
 
 describe('LoansService', () => {
   let service: LoansService;
@@ -34,6 +36,7 @@ describe('LoansService', () => {
     range: jest.fn().mockReturnThis(),
     single: jest.fn(),
     insert: jest.fn(),
+    update: jest.fn().mockReturnThis(),
   };
 
   const mockSupabaseClient = {
@@ -44,6 +47,43 @@ describe('LoansService', () => {
     getServiceRoleClient: jest.fn().mockReturnValue(mockSupabaseClient),
   };
 
+  const mockCreditScoringService = {
+    assess: jest.fn(),
+  };
+
+  function mockReputation(score: number, tier: string, interestRate: number, maxCredit: number) {
+    mockReputationService.getReputationScore.mockResolvedValue({
+      wallet: validWallet,
+      score,
+      tier,
+      interestRate,
+      maxCredit,
+      lastUpdated: '2026-02-13T10:00:00.000Z',
+    });
+  }
+
+  function mockVendorFound(isActive = true) {
+    mockSupabaseFrom.single.mockResolvedValue({
+      data: { id: vendorId, name: 'TechStore', verified: isActive },
+      error: null,
+    });
+  }
+
+  function mockVendorNotFound() {
+    mockSupabaseFrom.single.mockResolvedValue({
+      data: null,
+      error: { message: 'not found' },
+    });
+  }
+
+  function mockAssessment(decision: 'approved' | 'rejected' | 'manual_review') {
+    mockCreditScoringService.assess.mockReturnValue({
+      decision,
+      score: decision === 'approved' ? 85 : decision === 'rejected' ? 45 : 65,
+      reasons: ['Test assessment reason'],
+    });
+  }
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -52,6 +92,7 @@ describe('LoansService', () => {
         { provide: SupabaseService, useValue: mockSupabaseService },
         { provide: CreditLineContractClient, useClass: MockCreditLineContractClient },
         { provide: ReputationContractClient, useClass: MockReputationContractClient },
+        { provide: CreditScoringService, useValue: mockCreditScoringService },
       ],
     }).compile();
 
@@ -67,6 +108,7 @@ describe('LoansService', () => {
     mockSupabaseFrom.order.mockReturnThis();
     mockSupabaseFrom.range.mockReturnThis();
     mockSupabaseFrom.insert.mockResolvedValue({ error: null });
+    mockSupabaseFrom.update.mockReturnThis();
     mockCreditLineContractClient.buildCreateLoanTransaction.mockResolvedValue('AAAAAgAAAAC...');
     mockCreditLineContractClient.buildRepayLoanTx.mockResolvedValue('AAAAAgAAAAA...');
   });
@@ -229,32 +271,18 @@ describe('LoansService', () => {
   describe('createLoan', () => {
     const baseDto = { amount: 500, vendor: vendorId, term: 4 };
 
-    function mockReputation(score: number, tier: string, interestRate: number, maxCredit: number) {
-      mockReputationService.getReputationScore.mockResolvedValue({
-        wallet: validWallet,
-        score,
-        tier,
-        interestRate,
-        maxCredit,
-        lastUpdated: '2026-02-13T10:00:00.000Z',
-      });
-    }
-
-    function mockVendorFound(isActive = true) {
-      mockSupabaseFrom.single.mockResolvedValue({
-        data: { id: vendorId, name: 'TechStore', verified: isActive },
-        error: null,
-      });
-    }
-
-    it('should create a pending loan with XDR and terms', async () => {
+    beforeEach(() => {
       mockReputation(75, 'silver', 8, 2000);
       mockVendorFound();
+      mockAssessment('approved');
+    });
 
+    it('should create a pending loan with XDR and terms when auto-approved', async () => {
       const result = await service.createLoan(validWallet, baseDto);
 
       expect(result.loanId).toContain('pending-');
       expect(result.xdr).toBe('AAAAAgAAAAC...');
+      expect(result.assessment.decision).toBe('approved');
       expect(result.description).toBe('Create BNPL loan for $500 at TechStore');
       expect(result.terms.guarantee).toBe(100);
       expect(mockCreditLineContractClient.buildCreateLoanTransaction).toHaveBeenCalled();
@@ -280,9 +308,33 @@ describe('LoansService', () => {
       );
     });
 
+    it('should reject loan creation when assessment rejects', async () => {
+      mockAssessment('rejected');
+
+      await expect(service.createLoan(validWallet, baseDto)).rejects.toMatchObject({
+        response: { code: 'LOAN_ASSESSMENT_REJECTED' },
+      });
+
+      expect(mockCreditLineContractClient.buildCreateLoanTransaction).not.toHaveBeenCalled();
+      expect(mockSupabaseFrom.insert).not.toHaveBeenCalled();
+    });
+
+    it('should create under_review loan when assessment flags manual review', async () => {
+      mockAssessment('manual_review');
+
+      const result = await service.createLoan(validWallet, baseDto);
+
+      expect(result.xdr).toBeNull();
+      expect(result.assessment.decision).toBe('manual_review');
+      expect(mockCreditLineContractClient.buildCreateLoanTransaction).not.toHaveBeenCalled();
+      expect(mockSupabaseFrom.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'under_review',
+        }),
+      );
+    });
+
     it('should throw InternalServerErrorException when XDR construction fails', async () => {
-      mockReputation(75, 'silver', 8, 2000);
-      mockVendorFound();
       mockCreditLineContractClient.buildCreateLoanTransaction.mockRejectedValue(
         new Error('Soroban unavailable'),
       );
@@ -293,8 +345,6 @@ describe('LoansService', () => {
     });
 
     it('should throw InternalServerErrorException when pending loan persistence fails', async () => {
-      mockReputation(75, 'silver', 8, 2000);
-      mockVendorFound();
       mockSupabaseFrom.insert.mockResolvedValue({
         error: { message: 'insert failed' },
       });
@@ -532,6 +582,126 @@ describe('LoansService', () => {
     });
   });
 
+  describe('assessLoan', () => {
+    const loanId = '11111111-2222-3333-4444-555555555555';
+    const loanIdDb = loanId;
+    const chainLoanId = 'chain-loan-1';
+
+    function mockLoanFound(overrides: Record<string, unknown> = {}) {
+      mockSupabaseFrom.single.mockResolvedValue({
+        data: {
+          id: loanIdDb,
+          loan_id: chainLoanId,
+          user_wallet: validWallet,
+          status: 'pending',
+          amount: 500,
+          ...overrides,
+        },
+        error: null,
+      });
+    }
+
+    it('should assess a pending loan and approve it', async () => {
+      mockLoanFound();
+      mockAssessment('approved');
+
+      const result = await service.assessLoan(validWallet, loanId);
+
+      expect(result.assessment.decision).toBe('approved');
+      expect(result.previousStatus).toBe('pending');
+      expect(result.currentStatus).toBe('pending');
+      expect(mockSupabaseFrom.update).toHaveBeenCalled();
+    });
+
+    it('should assess a pending loan and mark it as rejected', async () => {
+      mockLoanFound();
+      mockAssessment('rejected');
+
+      const result = await service.assessLoan(validWallet, loanId);
+
+      expect(result.assessment.decision).toBe('rejected');
+      expect(result.currentStatus).toBe('rejected');
+    });
+
+    it('should assess an under_review loan and keep it under_review', async () => {
+      mockLoanFound({ status: 'under_review' });
+      mockAssessment('manual_review');
+
+      const result = await service.assessLoan(validWallet, loanId);
+
+      expect(result.assessment.decision).toBe('manual_review');
+      expect(result.currentStatus).toBe('under_review');
+    });
+
+    it('should throw NotFoundException when loan does not exist', async () => {
+      mockSupabaseFrom.single.mockResolvedValue({
+        data: null,
+        error: { message: 'not found' },
+      });
+
+      await expect(service.assessLoan(validWallet, loanId)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should throw NotFoundException when loan belongs to another user', async () => {
+      mockLoanFound({ user_wallet: 'GOTHERWALLET...' });
+
+      await expect(service.assessLoan(validWallet, loanId)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should throw BadRequestException when loan is active', async () => {
+      mockLoanFound({ status: 'active' });
+
+      await expect(service.assessLoan(validWallet, loanId)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should throw BadRequestException when loan is completed', async () => {
+      mockLoanFound({ status: 'completed' });
+
+      await expect(service.assessLoan(validWallet, loanId)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should throw BadRequestException when loan is defaulted', async () => {
+      mockLoanFound({ status: 'defaulted' });
+
+      await expect(service.assessLoan(validWallet, loanId)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should throw BadRequestException when loan is rejected', async () => {
+      mockLoanFound({ status: 'rejected' });
+
+      await expect(service.assessLoan(validWallet, loanId)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should throw InternalServerErrorException when status update fails', async () => {
+      mockLoanFound();
+      mockAssessment('approved');
+
+      const updatePromise = Promise.resolve({
+        error: { message: 'update failed' },
+        data: null,
+      });
+      mockSupabaseFrom.update.mockReturnValueOnce({
+        eq: jest.fn().mockReturnValueOnce(updatePromise),
+      });
+
+      await expect(service.assessLoan(validWallet, loanId)).rejects.toThrow(
+        InternalServerErrorException,
+      );
+    });
+  });
+
   describe('getMyLoans', () => {
     beforeEach(() => {
       mockSupabaseFrom.eq.mockImplementation((column: string, value: unknown) => {
@@ -636,6 +806,8 @@ describe('LoansService', () => {
         LoanListStatusFilter.ACTIVE,
         LoanListStatusFilter.COMPLETED,
         LoanListStatusFilter.DEFAULTED,
+        LoanListStatusFilter.UNDER_REVIEW,
+        LoanListStatusFilter.REJECTED,
       ]);
     });
 

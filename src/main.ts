@@ -1,6 +1,29 @@
+import * as Sentry from '@sentry/nestjs';
+
+Sentry.init(
+  {
+    environment: process.env.NODE_ENV || 'development',
+    tracesSampleRate: process.env.SENTRY_TRACES_SAMPLE_RATE
+      ? parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE)
+      : 0.1,
+  } as Parameters<typeof Sentry.init>[0],
+);
+
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
+
+// Minimal structural types for the docs basic-auth hook. Using the real
+// FastifyRequest/FastifyReply types breaks the build because
+// @nestjs/platform-fastify bundles its own copy of fastify's type tree.
+interface DocsHookRequest {
+  url: string;
+  headers: { authorization?: string };
+}
+interface DocsHookReply {
+  header: (key: string, value: string) => void;
+  status: (code: number) => { send: (body: unknown) => void };
+}
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { setupSwagger } from './config/swagger';
@@ -25,7 +48,7 @@ async function bootstrap() {
   const port = process.env.PORT || 4000;
   const apiPrefix = process.env.API_PREFIX || 'api/v1';
 
-  app.setGlobalPrefix(apiPrefix, { exclude: ['metrics'] });
+  app.setGlobalPrefix(apiPrefix, { exclude: ['metrics', '.well-known/stellar.toml'] });
 
   app.enableCors({
     origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
@@ -52,7 +75,7 @@ async function bootstrap() {
     if (docsUsername && docsPassword) {
       const docsPaths = [`/${apiPrefix}/docs`, `/${apiPrefix}/docs-json`];
 
-      app.getHttpAdapter().getInstance().addHook('preHandler', (request: any, reply: any, done: () => void) => {
+      app.getHttpAdapter().getInstance().addHook('preHandler', (request: DocsHookRequest, reply: DocsHookReply, done: () => void) => {
         if (!docsPaths.includes(request.url)) {
           done();
           return;

@@ -43,5 +43,6 @@ export class VendorResponseDto {
   @ApiPropertyOptional() website?: string;
   @ApiPropertyOptional() country?: string;
   @ApiPropertyOptional() city?: string;
+  @ApiPropertyOptional() description?: string;
   @ApiProperty() createdAt: string;
 }

@@ -23,4 +23,11 @@ export class HealthController {
   async checkDatabase() {
     return this.healthService.checkDatabaseMinimal();
   }
+
+  @Get('sentry-test')
+  @ApiOperation({ summary: 'Trigger a deliberate error to verify Sentry integration' })
+  @ApiResponse({ status: 500, description: 'Sentry test error triggered successfully' })
+  async triggerSentryTest() {
+    throw new Error('sentry test');
+  }
 }

@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { LoansController } from '../../../../src/modules/loans/loans.controller';
 import { LoansService } from '../../../../src/modules/loans/loans.service';
+import { BlockchainService } from '../../../../src/modules/blockchain/blockchain.service';
 import { CreateLoanResponseDto } from '../../../../src/modules/loans/dto/create-loan-response.dto';
 import { LoanListStatusFilter } from '../../../../src/modules/loans/dto/loan-list-query.dto';
 
@@ -31,6 +32,7 @@ describe('LoansController', () => {
     getAvailableCredit: jest.fn(),
     createLoan: jest.fn(),
     getMyLoans: jest.fn(),
+    assessLoan: jest.fn(),
   };
 
   const mockCreateLoanResponse: CreateLoanResponseDto = {
@@ -38,12 +40,16 @@ describe('LoansController', () => {
     xdr: 'AAAAAgAAAAC...',
     description: 'Create BNPL loan for $500 at TechStore',
     terms: mockQuoteResponse as any,
+    assessment: null,
   };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [LoansController],
-      providers: [{ provide: LoansService, useValue: mockLoansService }],
+      providers: [
+        { provide: LoansService, useValue: mockLoansService },
+        { provide: BlockchainService, useValue: {} },
+      ],
     }).compile();
 
     controller = module.get<LoansController>(LoansController);
@@ -152,6 +158,41 @@ describe('LoansController', () => {
       await expect(controller.getAvailableCredit(user)).rejects.toThrow(
         'Reputation contract unavailable',
       );
+    });
+  });
+
+  describe('assessLoan', () => {
+    const loanId = '11111111-2222-3333-4444-555555555555';
+
+    const mockAssessResponse = {
+      loanId: 'chain-loan-1',
+      assessment: {
+        decision: 'approved',
+        score: 85,
+        reasons: ['Strong reputation score of 85 with sufficient available credit'],
+      },
+      previousStatus: 'pending',
+      currentStatus: 'pending',
+    };
+
+    it('should assess a loan and return the result', async () => {
+      mockLoansService.assessLoan.mockResolvedValue(mockAssessResponse);
+
+      const result = await controller.assessLoan(currentUser, loanId);
+
+      expect(result).toEqual({
+        success: true,
+        data: mockAssessResponse,
+        message: 'Loan assessment completed successfully',
+      });
+      expect(loansService.assessLoan).toHaveBeenCalledWith(validWallet, loanId);
+      expect(loansService.assessLoan).toHaveBeenCalledTimes(1);
+    });
+
+    it('should propagate service errors to the caller', async () => {
+      mockLoansService.assessLoan.mockRejectedValue(new Error('Loan not found'));
+
+      await expect(controller.assessLoan(currentUser, loanId)).rejects.toThrow('Loan not found');
     });
   });
 

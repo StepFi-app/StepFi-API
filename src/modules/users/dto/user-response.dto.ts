@@ -29,6 +29,14 @@ export class UserProfileDto {
     @ApiProperty({ example: 'https://example.com/avatar.png', nullable: true, description: 'Avatar URL (https only), null until set' })
     avatar: string | null;
 
+    @ApiProperty({
+        example: 'sponsor',
+        nullable: true,
+        enum: ['sponsor', 'vendor', 'mentor'],
+        description: 'Permanent role chosen once via PATCH /users/me/role, null until chosen',
+    })
+    role: 'sponsor' | 'vendor' | 'mentor' | null;
+
     @ApiProperty({ type: UserPreferencesDto })
     preferences: UserPreferencesDto;
 

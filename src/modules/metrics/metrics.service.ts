@@ -1,6 +1,7 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Counter, Gauge, Histogram } from 'prom-client';
 import {
+  InjectMetric,
   makeCounterProvider,
   makeGaugeProvider,
   makeHistogramProvider,
@@ -8,7 +9,6 @@ import {
 
 export const HTTP_REQUEST_COUNT = 'http_requests_total';
 export const HTTP_REQUEST_DURATION_SECONDS = 'http_request_duration_seconds';
-export const BULLMQ_QUEUE_DEPTH = 'bullmq_queue_depth';
 export const INDEXER_LAG = 'indexer_lag_ledgers';
 export const HORIZON_HEALTH = 'horizon_up';
 export const DB_POOL_OPEN = 'db_pool_open';
@@ -24,11 +24,6 @@ export const metricProviders = [
     help: 'HTTP request duration in seconds',
     labelNames: ['method', 'status', 'path'] as const,
     buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
-  }),
-  makeGaugeProvider({
-    name: BULLMQ_QUEUE_DEPTH,
-    help: 'Current depth of BullMQ queues',
-    labelNames: ['queue'] as const,
   }),
   makeGaugeProvider({
     name: INDEXER_LAG,
@@ -47,17 +42,15 @@ export const metricProviders = [
 @Injectable()
 export class MetricsService {
   constructor(
-    @Inject(HTTP_REQUEST_COUNT)
+    @InjectMetric(HTTP_REQUEST_COUNT)
     private readonly requestCounter: Counter<string>,
-    @Inject(HTTP_REQUEST_DURATION_SECONDS)
+    @InjectMetric(HTTP_REQUEST_DURATION_SECONDS)
     private readonly requestDuration: Histogram<string>,
-    @Inject(BULLMQ_QUEUE_DEPTH)
-    private readonly queueDepth: Gauge<string>,
-    @Inject(INDEXER_LAG)
+    @InjectMetric(INDEXER_LAG)
     private readonly indexerLag: Gauge<string>,
-    @Inject(HORIZON_HEALTH)
+    @InjectMetric(HORIZON_HEALTH)
     private readonly horizonHealth: Gauge<string>,
-    @Inject(DB_POOL_OPEN)
+    @InjectMetric(DB_POOL_OPEN)
     private readonly dbPoolOpen: Gauge<string>,
   ) {}
 
@@ -72,10 +65,6 @@ export class MetricsService {
 
   observeHttpDuration(method: string, status: number, path: string, seconds: number): void {
     this.requestDuration.labels(method, String(status), path).observe(seconds);
-  }
-
-  setQueueDepth(queue: string, depth: number): void {
-    this.queueDepth.labels(queue).set(depth);
   }
 
   setIndexerLag(lag: number): void {

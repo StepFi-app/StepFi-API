@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { BlockchainIndexerProcessor } from '../../../../src/jobs/blockchain-indexer/blockchain-indexer.processor';
-import { EventParserService } from '../../../../src/jobs/blockchain-indexer/event-parser.service';
+import { IndexerService } from '../../../../src/indexer/indexer.service';
+import { EventParserService } from '../../../../src/indexer/event-parser.service';
 import { SupabaseService } from '../../../../src/database/supabase.client';
 import { SorobanService } from '../../../../src/blockchain/soroban/soroban.service';
 import {
@@ -11,7 +11,7 @@ import {
   LoanRepaidPayload,
   LoanDefaultedPayload,
   ScoreChangedPayload,
-} from '../../../../src/jobs/blockchain-indexer/interfaces';
+} from '../../../../src/indexer/interfaces/indexer.interfaces';
 
 // ---------------------------------------------------------------------------
 // Fluent Supabase mock helpers
@@ -39,8 +39,8 @@ function createChain(overrides: Record<string, unknown> = {}) {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('BlockchainIndexerProcessor', () => {
-  let processor: BlockchainIndexerProcessor;
+describe('IndexerService', () => {
+  let processor: IndexerService;
   let eventParser: EventParserService;
 
   // Per-table chains so we can assert on the right table
@@ -56,7 +56,10 @@ describe('BlockchainIndexerProcessor', () => {
     getServiceRoleClient: jest.fn().mockReturnValue(mockSupabaseClient),
   };
 
-  const mockServer = { getEvents: jest.fn() };
+  const mockServer = {
+    getEvents: jest.fn(),
+    getLatestLedger: jest.fn().mockResolvedValue({ sequence: 100000 }),
+  };
   const mockSorobanService = {
     getServer: jest.fn().mockReturnValue(mockServer),
   };
@@ -77,12 +80,8 @@ describe('BlockchainIndexerProcessor', () => {
 
     mockSupabaseClient.from.mockImplementation((table: string) => {
       switch (table) {
-        case 'indexer_cursor':
+        case 'indexer_state':
           return cursorChain;
-        case 'loan_index':
-          return loanChain;
-        case 'payment_index':
-          return paymentChain;
         case 'reputation_history':
           return reputationHistoryChain;
         case 'reputation_cache':
@@ -96,7 +95,7 @@ describe('BlockchainIndexerProcessor', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        BlockchainIndexerProcessor,
+        IndexerService,
         EventParserService,
         { provide: SupabaseService, useValue: mockSupabaseService },
         { provide: SorobanService, useValue: mockSorobanService },
@@ -109,7 +108,7 @@ describe('BlockchainIndexerProcessor', () => {
       ],
     }).compile();
 
-    processor = module.get(BlockchainIndexerProcessor);
+    processor = module.get(IndexerService);
     eventParser = module.get(EventParserService);
 
     jest.clearAllMocks();
@@ -156,7 +155,7 @@ describe('BlockchainIndexerProcessor', () => {
     it('should upsert the cursor with the new ledger', async () => {
       await processor.updateCursor('C_FAKE', 99999);
 
-      expect(mockSupabaseClient.from).toHaveBeenCalledWith('indexer_cursor');
+      expect(mockSupabaseClient.from).toHaveBeenCalledWith('indexer_state');
       expect(cursorChain.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           contract_id: 'C_FAKE',
@@ -179,7 +178,7 @@ describe('BlockchainIndexerProcessor', () => {
       });
       mockServer.getEvents.mockResolvedValue({ events: [], latestLedger: 100 });
 
-      await processor.process({} as any);
+      await processor.runIndexer();
 
       expect(mockServer.getEvents).toHaveBeenCalledTimes(2);
     });
@@ -193,13 +192,13 @@ describe('BlockchainIndexerProcessor', () => {
         .mockRejectedValueOnce(new Error('Network error'))
         .mockResolvedValueOnce({ events: [], latestLedger: 100 });
 
-      await expect(processor.process({} as any)).resolves.not.toThrow();
+      await expect(processor.runIndexer()).resolves.not.toThrow();
     });
 
     it('should skip contracts with no configured ID', async () => {
       const module: TestingModule = await Test.createTestingModule({
         providers: [
-          BlockchainIndexerProcessor,
+          IndexerService,
           EventParserService,
           { provide: SupabaseService, useValue: mockSupabaseService },
           { provide: SorobanService, useValue: mockSorobanService },
@@ -210,10 +209,10 @@ describe('BlockchainIndexerProcessor', () => {
         ],
       }).compile();
 
-      const emptyProcessor = module.get(BlockchainIndexerProcessor);
+      const emptyProcessor = module.get(IndexerService);
       mockServer.getEvents.mockClear();
 
-      await emptyProcessor.process({} as any);
+      await emptyProcessor.runIndexer();
 
       expect(mockServer.getEvents).not.toHaveBeenCalled();
     });
@@ -270,7 +269,7 @@ describe('BlockchainIndexerProcessor', () => {
         error: { code: '23505', message: 'unique_violation' },
       });
 
-      await expect(processor.process({} as any)).resolves.not.toThrow();
+      await expect(processor.runIndexer()).resolves.not.toThrow();
     });
 
     it('should handle duplicate LOAN_REPAID events (23505)', async () => {
@@ -291,7 +290,7 @@ describe('BlockchainIndexerProcessor', () => {
         error: { code: '23505', message: 'unique_violation' },
       });
 
-      await expect(processor.process({} as any)).resolves.not.toThrow();
+      await expect(processor.runIndexer()).resolves.not.toThrow();
     });
   });
 
@@ -338,7 +337,7 @@ describe('BlockchainIndexerProcessor', () => {
       // Second call via update (LOAN_DEFAULTED) succeeds — but eq() needs to resolve
       loanChain.eq.mockResolvedValue({ error: null });
 
-      await expect(processor.process({} as any)).resolves.not.toThrow();
+      await expect(processor.runIndexer()).resolves.not.toThrow();
     });
   });
 
@@ -385,7 +384,7 @@ describe('BlockchainIndexerProcessor', () => {
       reputationHistoryChain.insert.mockResolvedValue({ error: null });
       reputationCacheChain.eq.mockResolvedValue({ error: null });
 
-      await processor.process({} as any);
+      await processor.runIndexer();
 
       // Verify reputation_history insert
       expect(mockSupabaseClient.from).toHaveBeenCalledWith('reputation_history');

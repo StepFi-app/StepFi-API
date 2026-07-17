@@ -2,11 +2,21 @@ import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { SupabaseService } from '../supabase.client';
 import { UpdateUserDto } from '../../modules/users/dto/update-user.dto';
 
+/** Multipart upload file shape produced by the profile-image interceptor. */
+export interface UploadedAvatarFile {
+  originalname: string;
+  buffer: Buffer;
+  mimetype: string;
+  size?: number;
+}
+
 export interface UserPreferencesRecord {
     notifications_enabled: boolean;
     language: string;
     theme: string;
 }
+
+export type UserRole = 'sponsor' | 'vendor' | 'mentor';
 
 export interface UserRecord {
     id: string;
@@ -15,6 +25,8 @@ export interface UserRecord {
     display_name: string | null;
     avatar_url: string | null;
     status: 'active' | 'blocked';
+    /** Permanent role chosen once after registration — null until chosen */
+    role: UserRole | null;
     created_at: string;
     /** Nested from user_preferences table — null if row does not exist yet */
     user_preferences: UserPreferencesRecord | null;
@@ -42,7 +54,7 @@ export class UsersRepository {
             .getServiceRoleClient()
             .from('users')
             .select(
-                'id, wallet_address, username, display_name, avatar_url, status, created_at, user_preferences(notifications_enabled, language, theme)',
+                'id, wallet_address, username, display_name, avatar_url, status, role, created_at, user_preferences(notifications_enabled, language, theme)',
             )
             .eq('wallet_address', wallet)
             .maybeSingle();
@@ -75,7 +87,7 @@ export class UsersRepository {
             .getServiceRoleClient()
             .from('users')
             .insert({ wallet_address: wallet })
-            .select('id, wallet_address, username, display_name, avatar_url, status, created_at')
+            .select('id, wallet_address, username, display_name, avatar_url, status, role, created_at')
             .single();
 
         if (error) {
@@ -163,6 +175,57 @@ export class UsersRepository {
         return user as { wallet_address: string; display_name: string | null; avatar_url: string | null; updated_at: string; id: string };
     }
 
+    /**
+     * Returns only the user's current role, or null if the user does not exist
+     * or has not chosen a role yet.
+     */
+    async findRoleByWallet(wallet: string): Promise<UserRole | null> {
+        const { data, error } = await this.supabaseService
+            .getServiceRoleClient()
+            .from('users')
+            .select('role')
+            .eq('wallet_address', wallet)
+            .maybeSingle();
+
+        if (error) {
+            throw new InternalServerErrorException({
+                code: 'DATABASE_QUERY_ERROR',
+                message: error.message,
+            });
+        }
+        return (data?.role as UserRole | undefined) ?? null;
+    }
+
+    /**
+     * Sets the user's role, but only if no role is set yet.
+     *
+     * The `.is('role', null)` filter makes the write atomic: two concurrent
+     * requests cannot both succeed, because the second one matches zero rows.
+     * Returns the updated row, or null when no row was updated (role already
+     * set, or user does not exist).
+     */
+    async setRoleIfUnset(
+        wallet: string,
+        role: UserRole,
+    ): Promise<{ wallet_address: string; role: UserRole } | null> {
+        const { data, error } = await this.supabaseService
+            .getServiceRoleClient()
+            .from('users')
+            .update({ role })
+            .eq('wallet_address', wallet)
+            .is('role', null)
+            .select('wallet_address, role')
+            .maybeSingle();
+
+        if (error) {
+            throw new InternalServerErrorException({
+                code: 'DATABASE_ROLE_UPDATE_FAILED',
+                message: 'Failed to set user role.',
+            });
+        }
+        return (data as { wallet_address: string; role: UserRole } | null) ?? null;
+    }
+
     // --- REGISTRATION METHODS ---
 
     async checkUsernameExists(username: string): Promise<boolean> {
@@ -193,7 +256,7 @@ export class UsersRepository {
                 avatar_url: data.avatarUrl,
                 status: 'active',
             })
-            .select('id, wallet_address, username, display_name, avatar_url, status, created_at')
+            .select('id, wallet_address, username, display_name, avatar_url, status, role, created_at')
             .single();
 
         if (error) {
@@ -206,7 +269,7 @@ export class UsersRepository {
         return { ...(user as Omit<UserRecord, 'user_preferences'>), user_preferences: null };
     }
 
-    async uploadAvatar(walletAddress: string, file: any): Promise<string> {
+    async uploadAvatar(walletAddress: string, file: UploadedAvatarFile): Promise<string> {
         const fileExt = file.originalname.split('.').pop();
         const fileName = `${walletAddress}-${Date.now()}.${fileExt}`;
         const client = this.supabaseService.getServiceRoleClient();

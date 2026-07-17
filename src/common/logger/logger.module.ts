@@ -25,10 +25,13 @@ import { randomUUID } from 'node:crypto';
             ? { target: 'pino-pretty', options: { colorize: true, translateTime: true } }
             : undefined,
         customProps: (req) => ({
-          correlationId: (req as any).correlationId || (req as any).id || randomUUID(),
+          correlationId:
+            (req as unknown as { correlationId?: string; id?: string }).correlationId ||
+            (req as unknown as { correlationId?: string; id?: string }).id ||
+            randomUUID(),
         }),
         autoLogging: {
-          ignore: (req) => (req as any).url === '/metrics',
+          ignore: (req) => (req as unknown as { url?: string }).url === '/metrics',
         },
       },
     }),

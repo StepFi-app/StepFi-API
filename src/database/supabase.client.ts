@@ -19,7 +19,9 @@ export class SupabaseService {
           detectSessionInUrl: false,
         },
         realtime: {
-          transport: ws as any,
+          // supabase-js expects a browser WebSocket constructor; the `ws`
+          // package is API-compatible but not type-compatible in Node.
+          transport: ws as unknown as typeof WebSocket,
         },
       },
     );
@@ -34,7 +36,9 @@ export class SupabaseService {
           detectSessionInUrl: false,
         },
         realtime: {
-          transport: ws as any,
+          // supabase-js expects a browser WebSocket constructor; the `ws`
+          // package is API-compatible but not type-compatible in Node.
+          transport: ws as unknown as typeof WebSocket,
         },
       },
     );

@@ -1,8 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HealthService } from '../../../../src/modules/health/health.service';
 import { SupabaseService } from '../../../../src/database/supabase.client';
-import { HorizonClientService } from '../../../../src/stellar/horizon-client.service';
-import { getQueueToken } from '@nestjs/bullmq';
+import { ConfigService } from '@nestjs/config';
 
 describe('HealthService', () => {
   let service: HealthService;
@@ -45,48 +44,6 @@ describe('HealthService', () => {
         {
           provide: HorizonClientService,
           useValue: mockHorizonClientService,
-        },
-        {
-          provide: getQueueToken('blockchain-indexer'),
-          useValue: {
-            getJobCounts: jest.fn().mockResolvedValue({ waiting: 0, active: 0, failed: 0 }),
-            getWaitingCount: jest.fn().mockResolvedValue(0),
-            getActiveCount: jest.fn().mockResolvedValue(0),
-            getDelayedCount: jest.fn().mockResolvedValue(0),
-            getFailedCount: jest.fn().mockResolvedValue(0),
-            client: { ping: jest.fn().mockResolvedValue('PONG') },
-            name: 'blockchain-indexer',
-          },
-        },
-        {
-          provide: getQueueToken('payment-reminders'),
-          useValue: {
-            getWaitingCount: jest.fn().mockResolvedValue(0),
-            getActiveCount: jest.fn().mockResolvedValue(0),
-            getDelayedCount: jest.fn().mockResolvedValue(0),
-            getFailedCount: jest.fn().mockResolvedValue(0),
-            name: 'payment-reminders',
-          },
-        },
-        {
-          provide: getQueueToken('transaction-status-checker'),
-          useValue: {
-            getWaitingCount: jest.fn().mockResolvedValue(0),
-            getActiveCount: jest.fn().mockResolvedValue(0),
-            getDelayedCount: jest.fn().mockResolvedValue(0),
-            getFailedCount: jest.fn().mockResolvedValue(0),
-            name: 'transaction-status-checker',
-          },
-        },
-        {
-          provide: getQueueToken('nonce-cleanup'),
-          useValue: {
-            getWaitingCount: jest.fn().mockResolvedValue(0),
-            getActiveCount: jest.fn().mockResolvedValue(0),
-            getDelayedCount: jest.fn().mockResolvedValue(0),
-            getFailedCount: jest.fn().mockResolvedValue(0),
-            name: 'nonce-cleanup',
-          },
         },
       ],
     }).compile();
@@ -168,4 +125,3 @@ describe('HealthService', () => {
     });
   });
 });
-

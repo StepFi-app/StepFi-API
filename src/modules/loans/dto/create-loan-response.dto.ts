@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { LoanQuoteResponseDto } from './loan-quote-response.dto';
+import { CreditAssessmentResultDto } from '../../credit-scoring/dto/credit-scoring-response.dto';
 
 export class CreateLoanResponseDto {
   @ApiProperty({
@@ -11,8 +12,9 @@ export class CreateLoanResponseDto {
   @ApiProperty({
     description: 'Unsigned Soroban XDR transaction to be signed by the user',
     example: 'AAAAAgAAAAC...',
+    nullable: true,
   })
-  xdr: string;
+  xdr: string | null;
 
   @ApiProperty({
     description: 'Human-readable transaction description',
@@ -25,4 +27,11 @@ export class CreateLoanResponseDto {
     type: LoanQuoteResponseDto,
   })
   terms: LoanQuoteResponseDto;
+
+  @ApiProperty({
+    description: 'Credit assessment result',
+    type: CreditAssessmentResultDto,
+    nullable: true,
+  })
+  assessment: CreditAssessmentResultDto | null;
 }

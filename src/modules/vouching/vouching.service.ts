@@ -3,12 +3,14 @@ import {
   Logger,
   NotFoundException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { SupabaseService } from '../../database/supabase.client';
 import {
   ApproveVouchDto,
   RequestVouchDto,
   VouchResponseDto,
+  VouchRequestItemDto,
   VouchStatus,
 } from './dto/vouch.dto';
 
@@ -17,6 +19,7 @@ interface VouchRow {
   mentor_wallet: string;
   learner_wallet: string;
   message: string | null;
+  loan_amount: number | null;
   status: VouchStatus;
   created_at: string;
   expires_at: string;
@@ -165,6 +168,115 @@ export class VouchingService {
 
     const rows = (data ?? []) as VouchRow[];
     return rows.map((row) => this.mapToDto(row));
+  }
+
+  async getIncomingRequests(mentorWallet: string): Promise<VouchRequestItemDto[]> {
+    const client = this.supabaseService.getClient();
+
+    const { data, error } = await client
+      .from('vouches')
+      .select('learner_wallet, message, loan_amount, created_at')
+      .eq('mentor_wallet', mentorWallet)
+      .eq('status', VouchStatus.PENDING)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      this.logger.error(`Failed to fetch incoming requests for ${mentorWallet}: ${error.message}`);
+      throw new Error('Failed to fetch vouch requests.');
+    }
+
+    const rows = data ?? [];
+    const results: VouchRequestItemDto[] = [];
+
+    for (const row of rows) {
+      const reputationScore = await this.getLearnerReputationScore(row.learner_wallet);
+      results.push({
+        learnerWallet: row.learner_wallet,
+        reputationScore,
+        requestedLoanAmount: row.loan_amount ?? null,
+        loanPurpose: row.message ?? null,
+        requestedAt: row.created_at,
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * Revokes a vouch. Only the mentor who created it may revoke it; ownership is
+   * verified before the write. The vouch is soft-revoked (status = REVOKED) so
+   * the record remains auditable, consistent with the existing status lifecycle.
+   *
+   * Note: no reputation adjustment is performed. Reputation scores in StepFi are
+   * sourced read-only from the on-chain reputation contract (Redis -> Supabase
+   * cache -> blockchain); vouch approval applies no server-side reputation
+   * boost, so there is no delta to reverse here. If an on-chain reputation
+   * boost is ever wired into approval, its reversal belongs at that same layer.
+   */
+  async revokeVouch(mentorWallet: string, vouchId: string): Promise<VouchResponseDto> {
+    const client = this.supabaseService.getServiceRoleClient();
+
+    const { data: existing, error: findError } = await client
+      .from('vouches')
+      .select('*')
+      .eq('id', vouchId)
+      .maybeSingle();
+
+    if (findError) {
+      this.logger.error(`Failed to load vouch ${vouchId}: ${findError.message}`);
+      throw new Error('Failed to load vouch.');
+    }
+
+    if (!existing) {
+      throw new NotFoundException({
+        code: 'VOUCH_NOT_FOUND',
+        message: 'Vouch not found.',
+      });
+    }
+
+    const existingRow = existing as VouchRow;
+    if (existingRow.mentor_wallet !== mentorWallet) {
+      throw new ForbiddenException({
+        code: 'VOUCH_FORBIDDEN',
+        message: 'You can only revoke vouches you created.',
+      });
+    }
+
+    const { data, error } = await client
+      .from('vouches')
+      .update({
+        status: VouchStatus.REVOKED,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', vouchId)
+      .select()
+      .single();
+
+    if (error || !data) {
+      this.logger.error(`Failed to revoke vouch ${vouchId}: ${error?.message}`);
+      throw new Error('Failed to revoke vouch.');
+    }
+
+    this.logger.log(`Vouch revoked: id=${vouchId} mentor=${mentorWallet}`);
+    return this.mapToDto(data as VouchRow);
+  }
+
+  private async getLearnerReputationScore(wallet: string): Promise<number> {
+    try {
+      const { data, error } = await this.supabaseService.getClient()
+        .from('reputation_cache')
+        .select('score')
+        .eq('wallet_address', wallet)
+        .maybeSingle();
+
+      if (error || !data) {
+        return 0;
+      }
+
+      return data.score;
+    } catch {
+      return 0;
+    }
   }
 
   private mapToDto(data: VouchRow): VouchResponseDto {

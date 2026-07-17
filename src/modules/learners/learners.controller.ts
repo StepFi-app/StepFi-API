@@ -13,7 +13,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 export class LearnersController {
   constructor(private readonly learnersService: LearnersService) {}
 
-  @Get('me')
+  @Get('profile')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get learner profile' })
   @ApiResponse({ status: 200, description: 'Learner profile', type: LearnerResponseDto })
@@ -22,7 +22,7 @@ export class LearnersController {
     return this.learnersService.getProfile(user.wallet);
   }
 
-  @Patch('me')
+  @Patch('profile')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Update learner profile' })
   @ApiBody({ type: UpdateLearnerProfileDto })
@@ -32,5 +32,13 @@ export class LearnersController {
     @Body() dto: UpdateLearnerProfileDto,
   ): Promise<LearnerResponseDto> {
     return this.learnersService.upsertProfile(user.wallet, dto);
+  }
+
+  @Get('profile/completion')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get learner profile completion status' })
+  @ApiResponse({ status: 200, description: 'Completion status and missing fields' })
+  async getCompletionStatus(@CurrentUser() user: { wallet: string }): Promise<{ complete: boolean; missingFields: string[] }> {
+    return this.learnersService.getCompletionStatus(user.wallet);
   }
 }

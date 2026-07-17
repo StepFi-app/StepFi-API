@@ -22,6 +22,7 @@ import { LiquidityWithdrawResponseDto } from './dto/liquidity-withdraw-response.
 import { LiquidityDepositRequestDto } from './dto/liquidity-deposit-request.dto';
 import { LiquidityDepositResponseDto } from './dto/liquidity-deposit-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { Roles, RolesGuard } from '../../auth/guards/roles.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('liquidity')
@@ -87,7 +88,8 @@ export class LiquidityController {
 
   @Post('deposit')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('sponsor')
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Construct a liquidity pool deposit transaction',
@@ -116,7 +118,8 @@ export class LiquidityController {
 
   @Post('withdraw')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('sponsor')
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Construct a liquidity withdrawal transaction',

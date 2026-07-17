@@ -94,20 +94,40 @@ export class LiquidityService {
     const [poolStats, loansStats, totalInvestors] = await Promise.all([
       this.liquidityClient.getPoolStats().catch((err) => {
         this.logger.warn(`Failed to fetch pool stats from contract: ${err.message}`);
-        return { totalLiquidity: 0n };
+        return {
+          totalLiquidity: 0n,
+          lockedLiquidity: 0n,
+          availableLiquidity: 0n,
+          totalShares: 0n,
+          sharePrice: SHARE_PRICE_BPS,
+          withdrawalFeeBps: 0n,
+        };
       }),
       this.getActiveLoansStats(),
       this.getTotalUniqueInvestors(),
     ]);
 
     const totalLiquidity = this.fromStroops(poolStats.totalLiquidity as bigint);
+    const lockedLiquidity = this.fromStroops(poolStats.lockedLiquidity as bigint);
+    const availableLiquidity = this.fromStroops(poolStats.availableLiquidity as bigint);
+    const totalShares = this.fromStroops(poolStats.totalShares as bigint);
+    const sharePrice =
+      poolStats.totalShares > 0n
+        ? this.roundTo7(Number(poolStats.sharePrice) / Number(SHARE_PRICE_BPS))
+        : 1;
+
     const utilization =
       totalLiquidity > 0
-        ? Math.round((loansStats.totalLoaned / totalLiquidity) * 10000) / 100
+        ? Math.round((lockedLiquidity / totalLiquidity) * 10000) / 100
         : 0;
 
     const summary: PoolOverviewResponseDto = {
+      totalDeposits: totalLiquidity,
       totalLiquidity,
+      lockedLiquidity,
+      availableLiquidity,
+      totalShares,
+      sharePrice,
       apy: loansStats.estimatedApy,
       utilization,
       totalInvestors,

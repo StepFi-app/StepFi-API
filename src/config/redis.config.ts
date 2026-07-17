@@ -10,7 +10,13 @@ import pino from 'pino';
  * 
  * TTL: Time to live in seconds (default: 300 - 5 minutes)
  */
-export const getRedisConfig = async (configService: ConfigService): Promise<any> => {
+/** Cache options shape consumed by CacheModule.registerAsync (store is the redis client factory). */
+export interface RedisCacheConfig {
+  ttl: number;
+  store?: unknown;
+}
+
+export const getRedisConfig = async (configService: ConfigService): Promise<RedisCacheConfig> => {
   const isTest = process.env.NODE_ENV === 'test';
   const redisUrl = configService.get<string>('REDIS_URL');
   const ttl = configService.get<number>('REPUTATION_CACHE_TTL', 300);

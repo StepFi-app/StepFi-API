@@ -6,6 +6,8 @@ export enum LoanListStatusFilter {
   ACTIVE = 'active',
   COMPLETED = 'completed',
   DEFAULTED = 'defaulted',
+  UNDER_REVIEW = 'under_review',
+  REJECTED = 'rejected',
 }
 
 export class LoanListQueryDto {
@@ -16,7 +18,7 @@ export class LoanListQueryDto {
   })
   @IsOptional()
   @IsEnum(LoanListStatusFilter, {
-    message: 'status must be one of: active, completed, defaulted',
+    message: 'status must be one of: active, completed, defaulted, under_review, rejected',
   })
   status?: LoanListStatusFilter;
 

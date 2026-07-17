@@ -87,7 +87,7 @@ export class CreditLineContractClient {
         fee: StellarSdk.BASE_FEE,
         networkPassphrase,
       })
-        .addOperation(contract.call('repay_loan', userArg, loanIdArg, amountArg))
+        .addOperation(contract.call('repay_installment', userArg, loanIdArg, amountArg))
         .setTimeout(300)
         .build();
 
