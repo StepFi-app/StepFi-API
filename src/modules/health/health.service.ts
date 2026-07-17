@@ -20,11 +20,6 @@ export class HealthService {
     @InjectQueue('nonce-cleanup')
     private readonly nonceCleanupQueue: Queue,
   ) {}
-  ) {
-    this.horizonUrl =
-      this.configService.get<string>('STELLAR_HORIZON_URL') ||
-      'https://horizon-testnet.stellar.org';
-  }
 
   async check() {
     const [db, horizon, indexer] = await Promise.all([
@@ -52,26 +47,21 @@ export class HealthService {
   async checkDatabase() {
     try {
       const client = this.supabaseService.getClient();
+      if (!client) {
+        throw new Error('Supabase client is unavailable');
+      }
       const { error } = await client.auth.getSession();
       if (error && error.message !== 'Invalid Refresh Token' && !error.message.includes('JWT')) {
         throw error;
       }
       return { status: 'ok', database: 'connected', message: 'Supabase reachable' };
     } catch (error) {
-      this.logger.error({ 
-        context: 'HealthService', 
-        action: 'checkDatabase', 
-        error: error instanceof Error ? error.message : String(error) 
-      });
-      return { 
-        status: 'error', 
-        database: 'disconnected', 
-        message: error instanceof Error ? error.message : 'Unknown error' 
-      };
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error({ context: 'HealthService', action: 'checkDatabase', error: errorMessage });
+      return { status: 'error', database: 'disconnected', message: errorMessage };
     }
   }
 
-  async checkHorizon(): Promise<Record<string, unknown>> {
   async checkHorizon(): Promise<{ status: string; [key: string]: unknown }> {
     try {
       const root = await this.horizonClientService.getRoot();
