@@ -254,6 +254,8 @@ export class IndexerService {
         interest_amount: payload.interestAmount,
         due_date: payload.dueDate,
         event_id: event.eventId,
+        transaction_hash: event.txHash,
+        ledger_sequence: event.ledgerSequence,
         last_synced_at: new Date().toISOString(),
       },
       { onConflict: 'event_id', ignoreDuplicates: true },

@@ -6,6 +6,7 @@ import { SupabaseService } from '../database/supabase.client';
 import { StellarModule } from '../stellar/stellar.module';
 import { IndexerController } from './indexer.controller';
 import { IndexerStatusService } from './indexer-status.service';
+import { AuthoritativeStateReader } from './authoritative-state.reader';
 
 @Module({
   imports: [ConfigModule, StellarModule],
@@ -15,6 +16,8 @@ import { IndexerStatusService } from './indexer-status.service';
     EventParserService,
     SupabaseService,
     IndexerStatusService,
+    AuthoritativeStateReader,
   ],
+  exports: [AuthoritativeStateReader],
 })
 export class IndexerModule {}

@@ -6,6 +6,7 @@ import { TransactionsService } from './transactions.service';
 import { AuthModule } from '../auth/auth.module';
 import { SupabaseService } from '../../database/supabase.client';
 import { getRedisConfig } from '../../config/redis.config';
+import { TransactionsRepository } from './transactions.repository';
 
 @Module({
   imports: [
@@ -18,7 +19,7 @@ import { getRedisConfig } from '../../config/redis.config';
     }),
   ],
   controllers: [TransactionsController],
-  providers: [TransactionsService, SupabaseService],
-  exports: [TransactionsService],
+  providers: [TransactionsService, TransactionsRepository, SupabaseService],
+  exports: [TransactionsService, TransactionsRepository],
 })
 export class TransactionsModule {}

@@ -12,6 +12,7 @@ export const HTTP_REQUEST_DURATION_SECONDS = 'http_request_duration_seconds';
 export const INDEXER_LAG = 'indexer_lag_ledgers';
 export const HORIZON_HEALTH = 'horizon_up';
 export const DB_POOL_OPEN = 'db_pool_open';
+export const RECONCILIATION_DRIFT = 'state_reconciliation_drift';
 
 export const metricProviders = [
   makeCounterProvider({
@@ -37,6 +38,11 @@ export const metricProviders = [
     name: DB_POOL_OPEN,
     help: 'Number of open database connections',
   }),
+  makeGaugeProvider({
+    name: RECONCILIATION_DRIFT,
+    help: 'Current reconciliation drift count by mismatch type',
+    labelNames: ['type'] as const,
+  }),
 ];
 
 @Injectable()
@@ -52,6 +58,8 @@ export class MetricsService {
     private readonly horizonHealth: Gauge<string>,
     @InjectMetric(DB_POOL_OPEN)
     private readonly dbPoolOpen: Gauge<string>,
+    @InjectMetric(RECONCILIATION_DRIFT)
+    private readonly reconciliationDrift: Gauge<string>,
   ) {}
 
   async getMetrics(): Promise<string> {
@@ -77,5 +85,9 @@ export class MetricsService {
 
   setDbPoolOpen(count: number): void {
     this.dbPoolOpen.set(count);
+  }
+
+  setReconciliationDrift(type: string, count: number): void {
+    this.reconciliationDrift.labels(type).set(count);
   }
 }

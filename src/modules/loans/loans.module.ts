@@ -8,6 +8,7 @@ import { BlockchainModule } from '../blockchain/blockchain.module';
 import { SupabaseService } from '../../database/supabase.client';
 import { StellarModule } from '../../stellar/stellar.module';
 import { CreditScoringModule } from '../credit-scoring/credit-scoring.module';
+import { LoansRepository } from './loans.repository';
 
 @Module({
   imports: [ConfigModule, AuthModule, ReputationModule, BlockchainModule, StellarModule, CreditScoringModule],
@@ -15,8 +16,9 @@ import { CreditScoringModule } from '../credit-scoring/credit-scoring.module';
   providers: [
     LoansService,
     SupabaseService,
+    LoansRepository,
   ],
-  exports: [LoansService],
+  exports: [LoansService, LoansRepository],
 })
 export class LoansModule {}
 

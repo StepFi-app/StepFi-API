@@ -28,6 +28,7 @@ import { MetricsModule } from './modules/metrics/metrics.module';
 import { CreditScoringModule } from './modules/credit-scoring/credit-scoring.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { CorrelationIdMiddleware } from './common/logger/correlation-id.middleware';
+import { StateReconciliationModule } from './jobs/state-reconciliation/state-reconciliation.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { CorrelationIdMiddleware } from './common/logger/correlation-id.middlewa
     TransactionStatusCheckerModule,
     NonceCleanupModule,
     SupabaseKeepAliveModule,
+    StateReconciliationModule,
     CreditScoringModule,
     AdminModule,
     StellarModule,

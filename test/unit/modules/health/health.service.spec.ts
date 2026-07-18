@@ -49,6 +49,14 @@ describe('HealthService', () => {
     });
 
     it('should return health status', async () => {
+      jest.spyOn(service, 'checkDatabase').mockResolvedValue({
+        status: 'ok',
+        database: 'connected',
+        message: 'Supabase reachable',
+      });
+      jest.spyOn(service, 'checkHorizon').mockResolvedValue({ status: 'ok' });
+      jest.spyOn(service, 'checkIndexerLag').mockResolvedValue({ status: 'ok' });
+
       const result = await service.check();
 
       expect(result).toHaveProperty('status');
