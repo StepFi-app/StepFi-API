@@ -215,7 +215,11 @@ export class HorizonClientService implements OnModuleInit {
       message.includes('econnrefused') ||
       message.includes('econnreset') ||
       message.includes('network') ||
-      message.includes('socket')
+      message.includes('socket') ||
+      message.includes('fetch') ||
+      message.includes('dns') ||
+      message.includes('enotfound') ||
+      message.includes('eai_again')
     );
   }
 }

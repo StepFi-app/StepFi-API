@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { HealthService } from '../../../../src/modules/health/health.service';
 import { SupabaseService } from '../../../../src/database/supabase.client';
 import { ConfigService } from '@nestjs/config';
+import { HorizonClientService } from '../../../../src/stellar/horizon-client.service';
 
 describe('HealthService', () => {
   let service: HealthService;

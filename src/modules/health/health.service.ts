@@ -1,6 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
 import { SupabaseService } from '../../database/supabase.client';
 import { HorizonClientService } from '../../stellar/horizon-client.service';
 
@@ -11,14 +9,6 @@ export class HealthService {
   constructor(
     private readonly horizonClientService: HorizonClientService,
     private readonly supabaseService: SupabaseService,
-    @InjectQueue('blockchain-indexer')
-    private readonly indexerQueue: Queue,
-    @InjectQueue('payment-reminders')
-    private readonly paymentRemindersQueue: Queue,
-    @InjectQueue('transaction-status-checker')
-    private readonly txStatusQueue: Queue,
-    @InjectQueue('nonce-cleanup')
-    private readonly nonceCleanupQueue: Queue,
   ) {}
 
   async check() {
@@ -54,11 +44,26 @@ export class HealthService {
       if (error && error.message !== 'Invalid Refresh Token' && !error.message.includes('JWT')) {
         throw error;
       }
-      return { status: 'ok', database: 'connected', message: 'Supabase reachable' };
+      return {
+        status: 'ok',
+        database: 'connected',
+        message: 'Supabase reachable',
+        timestamp: new Date().toISOString(),
+      };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'object' && error && 'message' in error
+            ? String((error as { message: unknown }).message)
+            : String(error);
       this.logger.error({ context: 'HealthService', action: 'checkDatabase', error: errorMessage });
-      return { status: 'error', database: 'disconnected', message: errorMessage };
+      return {
+        status: 'error',
+        database: 'disconnected',
+        message: errorMessage,
+        timestamp: new Date().toISOString(),
+      };
     }
   }
 
