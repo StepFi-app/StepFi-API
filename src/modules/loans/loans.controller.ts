@@ -184,7 +184,7 @@ export class LoansController {
   @ApiOperation({
     summary: 'Make a loan repayment',
     description:
-      'Validates the payment, constructs an unsigned Soroban repay_loan() transaction, and returns it alongside a payment preview. The mobile app must sign the XDR and submit the signed transaction back to the network. Requires JWT authentication.',
+      'Validates the payment, constructs an unsigned Soroban repay_installment() transaction, and returns it alongside a payment preview. The mobile app must sign the XDR and submit the signed transaction back to the network. Requires JWT authentication.',
   })
   @ApiResponse({
     status: 200,

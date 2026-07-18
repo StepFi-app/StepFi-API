@@ -27,7 +27,7 @@ export class LoanPaymentPreviewDto {
  */
 export class LoanPaymentResponseDto {
   @ApiProperty({
-    description: 'Unsigned XDR transaction for the repay_loan() Soroban call',
+    description: 'Unsigned XDR transaction for the repay_installment() Soroban call',
     example: 'AAAAAgAAAAA...',
   })
   unsignedXdr: string;

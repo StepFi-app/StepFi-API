@@ -535,7 +535,7 @@ export class TransactionStatusCheckerService {
         };
       }
 
-      if (functionName === 'repay_loan') {
+      if (functionName === 'repay_installment') {
         const loanId = nativeArgs[1] as string;
         const rawAmount = nativeArgs[2];
         const amount = typeof rawAmount === 'bigint' ? Number(rawAmount) / 10_000_000 :

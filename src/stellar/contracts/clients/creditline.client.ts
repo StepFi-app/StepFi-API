@@ -97,7 +97,7 @@ export class CreditLineContractClient {
       if (error instanceof ContractNotConfiguredError) {
         throw error;
       }
-      this.logger.error(`Failed to build repay_loan transaction: ${error.message}`);
+      this.logger.error(`Failed to build repay_installment transaction: ${error.message}`);
       throw new ContractTxBuildError('repayment');
     }
   }
