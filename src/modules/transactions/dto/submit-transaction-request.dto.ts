@@ -4,6 +4,7 @@ import { ApiProperty } from '@nestjs/swagger';
 export enum TransactionType {
   LOAN_CREATE = 'loan_create',
   LOAN_REPAY = 'loan_repay',
+  LOAN_DEFAULT = 'loan_default',
   DEPOSIT = 'deposit',
   WITHDRAW = 'withdraw',
 }

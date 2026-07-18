@@ -102,6 +102,37 @@ export class CreditLineContractClient {
     }
   }
 
+  async buildMarkDefaultedTx(loanId: string): Promise<string> {
+    this.ensureConfigured();
+
+    try {
+      const contract = new StellarSdk.Contract(this.contractId);
+      const server = this.sorobanService.getServer();
+      const networkPassphrase = this.sorobanService.getNetworkPassphrase();
+      const loanIdArg = StellarSdk.nativeToScVal(loanId, { type: 'string' });
+
+      const sourceKeypair = StellarSdk.Keypair.random();
+      const sourceAccount = new StellarSdk.Account(sourceKeypair.publicKey(), '0');
+
+      const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase,
+      })
+        .addOperation(contract.call('mark_defaulted', loanIdArg))
+        .setTimeout(300)
+        .build();
+
+      const prepared = await server.prepareTransaction(tx);
+      return prepared.toXDR();
+    } catch (error) {
+      if (error instanceof ContractNotConfiguredError) {
+        throw error;
+      }
+      this.logger.error(`Failed to build mark_defaulted transaction: ${error.message}`);
+      throw new ContractTxBuildError('mark_defaulted');
+    }
+  }
+
   private ensureConfigured(): void {
     if (!this.contractId) {
       throw new ContractNotConfiguredError('Credit line contract');

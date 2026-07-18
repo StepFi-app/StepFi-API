@@ -22,6 +22,7 @@ import { LoanPaymentReminderModule } from './jobs/loan-payment-reminder/loan-pay
 import { TransactionStatusCheckerModule } from './jobs/transaction-status-checker/transaction-status-checker.module';
 import { NonceCleanupModule } from './jobs/nonce-cleanup/nonce-cleanup.module';
 import { SupabaseKeepAliveModule } from './jobs/supabase-keepalive/supabase-keepalive.module';
+import { JobsModule } from './jobs/jobs.module';
 import { StellarModule } from './stellar/stellar.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
@@ -63,6 +64,7 @@ import { CorrelationIdMiddleware } from './common/logger/correlation-id.middlewa
     CreditScoringModule,
     AdminModule,
     StellarModule,
+    JobsModule,
   ],
   controllers: [],
   providers: [

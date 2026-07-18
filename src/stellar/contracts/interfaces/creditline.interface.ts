@@ -21,4 +21,6 @@ export interface ICreditLineClient {
     loanId: string,
     amount: number,
   ): Promise<string>;
+
+  buildMarkDefaultedTx(loanId: string): Promise<string>;
 }
