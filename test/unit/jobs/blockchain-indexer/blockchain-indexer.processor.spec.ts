@@ -4,6 +4,7 @@ import { IndexerService } from '../../../../src/indexer/indexer.service';
 import { EventParserService } from '../../../../src/indexer/event-parser.service';
 import { SupabaseService } from '../../../../src/database/supabase.client';
 import { SorobanService } from '../../../../src/blockchain/soroban/soroban.service';
+import { RealtimeEventHandler } from '../../../../src/indexer/event-handlers/realtime.handler';
 import {
   LoanEventType,
   ReputationEventType,
@@ -69,6 +70,12 @@ describe('IndexerService', () => {
     REPUTATION_CONTRACT_ID: 'C_REPUTATION_FAKE',
   };
 
+  const mockRealtimeEventHandler = {
+    handleLoanCreated: jest.fn(),
+    handleLoanRepaid: jest.fn(),
+    handleLoanDefaulted: jest.fn(),
+  };
+
   /** Resets all per-table chains and wires `from()` to dispatch by name. */
   function resetChains() {
     cursorChain = createChain();
@@ -99,6 +106,7 @@ describe('IndexerService', () => {
         EventParserService,
         { provide: SupabaseService, useValue: mockSupabaseService },
         { provide: SorobanService, useValue: mockSorobanService },
+        { provide: RealtimeEventHandler, useValue: mockRealtimeEventHandler },
         {
           provide: ConfigService,
           useValue: {
@@ -202,6 +210,7 @@ describe('IndexerService', () => {
           EventParserService,
           { provide: SupabaseService, useValue: mockSupabaseService },
           { provide: SorobanService, useValue: mockSorobanService },
+          { provide: RealtimeEventHandler, useValue: mockRealtimeEventHandler },
           {
             provide: ConfigService,
             useValue: { get: jest.fn().mockReturnValue('') },

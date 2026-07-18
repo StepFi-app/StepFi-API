@@ -5,6 +5,7 @@ import * as StellarSdk from 'stellar-sdk';
 import { SupabaseService } from '../database/supabase.client';
 import { SorobanService } from '../blockchain/soroban/soroban.service';
 import { EventParserService } from './event-parser.service';
+import { RealtimeEventHandler } from './event-handlers/realtime.handler';
 import {
   ParsedContractEvent,
   LoanEventType,
@@ -31,6 +32,7 @@ export class IndexerService {
     private readonly sorobanService: SorobanService,
     private readonly supabaseService: SupabaseService,
     private readonly eventParser: EventParserService,
+    private readonly realtimeEventHandler: RealtimeEventHandler,
   ) {
     this.loanContractId =
       this.configService.get<string>('CREDIT_LINE_CONTRACT_ID') || '';
@@ -266,6 +268,8 @@ export class IndexerService {
       }
       throw new Error(`Failed to persist LOAN_CREATED: ${error.message}`);
     }
+
+    this.realtimeEventHandler.handleLoanCreated(event);
   }
 
   private async persistLoanRepaid(
@@ -325,6 +329,8 @@ export class IndexerService {
           last_synced_at: new Date().toISOString(),
         })
         .eq('loan_id', payload.loanId);
+
+      this.realtimeEventHandler.handleLoanRepaid(event, newStatus);
     }
   }
 
@@ -344,6 +350,8 @@ export class IndexerService {
     if (error) {
       throw new Error(`Failed to persist LOAN_DEFAULTED: ${error.message}`);
     }
+
+    this.realtimeEventHandler.handleLoanDefaulted(event);
   }
 
   private async persistScoreChanged(

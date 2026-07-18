@@ -53,10 +53,20 @@ export class HealthService {
       if (error && error.message !== 'Invalid Refresh Token' && !error.message.includes('JWT')) {
         throw error;
       }
-      return { status: 'ok', database: 'connected', message: 'Supabase reachable' };
+      return {
+        status: 'ok',
+        database: 'connected',
+        message: 'Supabase reachable',
+        timestamp: new Date().toISOString(),
+      };
     } catch (error) {
       this.logger.error({ context: 'HealthService', action: 'checkDatabase', error: error.message });
-      return { status: 'error', database: 'disconnected', message: error.message };
+      return {
+        status: 'error',
+        database: 'disconnected',
+        message: error.message,
+        timestamp: new Date().toISOString(),
+      };
     }
   }
 

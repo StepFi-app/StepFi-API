@@ -28,6 +28,7 @@ import { MetricsModule } from './modules/metrics/metrics.module';
 import { CreditScoringModule } from './modules/credit-scoring/credit-scoring.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { CorrelationIdMiddleware } from './common/logger/correlation-id.middleware';
+import { RealtimeModule } from './realtime/realtime.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { CorrelationIdMiddleware } from './common/logger/correlation-id.middlewa
     CreditScoringModule,
     AdminModule,
     StellarModule,
+    RealtimeModule,
   ],
   controllers: [],
   providers: [
