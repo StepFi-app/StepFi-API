@@ -9,7 +9,7 @@ import {
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { SupabaseService } from '../../database/supabase.client';
-import { LiquidityPoolContractClient } from '../../stellar/contracts/clients/liquidity-pool.client';
+import { LiquidityContractClient } from '../../blockchain/contracts/liquidity-contract.client';
 import { InvestmentSummaryResponseDto } from './dto/investment-summary-response.dto';
 import { LiquidityWithdrawRequestDto } from './dto/liquidity-withdraw-request.dto';
 import { LiquidityWithdrawResponseDto } from './dto/liquidity-withdraw-response.dto';
@@ -23,6 +23,29 @@ const SHARE_PRICE_BPS = 10_000n;
 const LP_FEE_RATIO = 0.85;
 const MIN_DEPOSIT_AMOUNT = 10;
 
+const SOROBAN_ERROR_MAP: Record<string, { code: string; message: string }> = {
+  '100': {
+    code: 'LIQUIDITY_INSUFFICIENT_BALANCE',
+    message: 'Insufficient balance to complete this operation.',
+  },
+  '101': {
+    code: 'LIQUIDITY_INVALID_AMOUNT',
+    message: 'The requested amount is invalid or must be greater than zero.',
+  },
+  '102': {
+    code: 'LIQUIDITY_POOL_LOCKED',
+    message: 'The liquidity pool is currently locked.',
+  },
+  '103': {
+    code: 'LIQUIDITY_INSUFFICIENT_SHARES',
+    message: 'You do not have enough pool shares to complete this withdrawal.',
+  },
+  '104': {
+    code: 'LIQUIDITY_INSUFFICIENT_AVAILABLE_LIQUIDITY',
+    message: 'The pool does not currently have enough liquid funds to satisfy this withdrawal.',
+  },
+};
+
 @Injectable()
 export class LiquidityService {
   private readonly logger = new Logger(LiquidityService.name);
@@ -30,7 +53,7 @@ export class LiquidityService {
   constructor(
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
     private readonly supabaseService: SupabaseService,
-    private readonly liquidityClient: LiquidityPoolContractClient,
+    private readonly liquidityClient: LiquidityContractClient,
   ) {}
 
   async getInvestmentSummary(wallet: string): Promise<InvestmentSummaryResponseDto> {
@@ -156,7 +179,7 @@ export class LiquidityService {
       this.liquidityClient.calculateDeposit(amountInStroops),
     ]);
 
-    const unsignedXdr = await this.liquidityClient.buildDepositTx(wallet, amountInStroops);
+    const unsignedXdr = await this.buildDepositXdr(wallet, dto.amount);
 
     const currentTotalLiquidity = this.fromStroops(poolStats.totalLiquidity);
     const currentSharePrice =
@@ -218,7 +241,7 @@ export class LiquidityService {
     const fee = (expectedAmount * poolStats.withdrawalFeeBps) / SHARE_PRICE_BPS;
     const netAmount = expectedAmount - fee;
     const remainingShares = ownedShares - requestedShares;
-    const unsignedXdr = await this.liquidityClient.buildWithdrawTx(wallet, requestedShares);
+    const unsignedXdr = await this.buildWithdrawXdr(wallet, dto.shares);
 
     return {
       unsignedXdr,
@@ -235,6 +258,43 @@ export class LiquidityService {
         availableLiquidity: this.fromStroops(poolStats.availableLiquidity),
       },
     };
+  }
+
+  async buildDepositXdr(walletAddress: string, amount: number): Promise<string> {
+    try {
+      return await this.liquidityClient.buildUnsignedXdr('deposit', [walletAddress, amount]);
+    } catch (error) {
+      this.handleContractError(error, 'deposit');
+    }
+  }
+
+  async buildWithdrawXdr(walletAddress: string, shares: number): Promise<string> {
+    try {
+      return await this.liquidityClient.buildUnsignedXdr('withdraw', [walletAddress, shares]);
+    } catch (error) {
+      this.handleContractError(error, 'withdraw');
+    }
+  }
+
+  private handleContractError(error: any, operation: string): never {
+    const errorMsg = error.message || String(error);
+    const match = errorMsg.match(/ErrorCode\((\d+)\)|Error\(Contract,\s*#?(\d+)\)|ContractError\((\d+)\)|#(\d+)/);
+
+    if (match) {
+      const errorCode = match[1] || match[2] || match[3] || match[4];
+      const mapped = SOROBAN_ERROR_MAP[errorCode];
+      if (mapped) {
+        throw new BadRequestException({
+          code: mapped.code,
+          message: mapped.message,
+        });
+      }
+    }
+
+    throw new BadRequestException({
+      code: 'BLOCKCHAIN_SIMULATION_FAILED',
+      message: `Failed to simulate ${operation}: ${errorMsg}`,
+    });
   }
 
   private async getTotalInvested(wallet: string): Promise<number> {

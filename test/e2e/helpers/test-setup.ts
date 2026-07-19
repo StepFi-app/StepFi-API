@@ -15,6 +15,7 @@ import { SorobanService } from '../../../src/blockchain/soroban/soroban.service'
 import { CreditLineContractClient } from '../../../src/stellar/contracts/clients/creditline.client';
 import { ReputationContractClient } from '../../../src/stellar/contracts/clients/reputation.client';
 import { LiquidityPoolContractClient } from '../../../src/stellar/contracts/clients/liquidity-pool.client';
+import { LiquidityContractClient } from '../../../src/blockchain/contracts/liquidity-contract.client';
 import { VendorRegistryContractClient } from '../../../src/stellar/contracts/clients/vendor-registry.client';
 import { ParametersContractClient } from '../../../src/stellar/contracts/clients/parameters.client';
 import { randomUUID } from 'crypto';
@@ -327,6 +328,9 @@ export async function buildTestApp(): Promise<{
     getPoolStats: jest.fn().mockResolvedValue(null),
     getVendor: jest.fn().mockResolvedValue(null),
     getParameters: jest.fn().mockResolvedValue(null),
+    buildUnsignedXdr: jest
+      .fn()
+      .mockResolvedValue('AAAAAgAAAQAAAAAAAAAAiZ3TgwAAAAAyMZyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=='),
   };
 
   const mockCacheManager = {
@@ -357,6 +361,8 @@ export async function buildTestApp(): Promise<{
     .overrideProvider(ReputationContractClient)
     .useValue(mockContractClient)
     .overrideProvider(LiquidityPoolContractClient)
+    .useValue(mockContractClient)
+    .overrideProvider(LiquidityContractClient)
     .useValue(mockContractClient)
     .overrideProvider(VendorRegistryContractClient)
     .useValue(mockContractClient)
