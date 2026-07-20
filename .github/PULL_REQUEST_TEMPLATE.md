@@ -1,30 +1,49 @@
-## 🔗 Related Issue
-Closes #issue-number
+## Summary
 
----
+Closes #[issue number]
 
-## 🔖 Title
-<!-- Brief and clear. Describe the specific task -->
+Briefly describe what this PR does in 2-3 sentences.
 
----
+## This repo is for the NestJS backend API only
 
-## 📝 Description
-<!-- Describe the changes made in this PR. What problem does it solve? -->
+Before submitting, confirm your changes belong here:
 
----
+- [ ] My changes are inside src/ or test/
+- [ ] I have NOT added React, React Native,
+      or frontend component files
+- [ ] I have NOT added Rust or Soroban contract code
+- [ ] This is NestJS/TypeScript backend work
 
-## 🔄 Changes Made
-<!-- List the main changes in this PR -->
-- [ ] <!-- Change 1 -->
-- [ ] <!-- Change 2 -->
-- [ ] <!-- Change 3 -->
+## Type of change
 
----
+- [ ] Bug fix
+- [ ] New endpoint
+- [ ] New service or module
+- [ ] Database migration
+- [ ] Background job
+- [ ] Test coverage
 
-## 📸 Screenshots (if applicable)
-<!-- Add screenshots or GIFs if the changes affect the UI -->
+## Testing
 
----
+- [ ] npm run build passes with zero TypeScript errors
+- [ ] npm test passes — all 184+ existing tests pass
+- [ ] No new `any` types introduced anywhere
+- [ ] Swagger decorators added to every new endpoint
+- [ ] Migration file created for any schema changes
+- [ ] New unit tests written for new service methods
 
-## 🗒️ Additional Notes
-<!-- Any additional information, concerns, or context for reviewers -->
+## Context files reviewed
+
+- [ ] context/architecture-context.md
+- [ ] context/code-standards.md
+- [ ] context/progress-tracker.md updated
+
+## Mandatory before requesting review
+
+Running these must all exit 0:
+npm run build
+npm test
+
+If either fails, fix it before opening this PR.
+PRs with failing CI checks will be closed without review.
+PRs that reduce the test count will be rejected.
