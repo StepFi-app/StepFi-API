@@ -12,6 +12,7 @@ Sentry.init(
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
+import { WsAdapter } from '@nestjs/platform-ws';
 
 // Minimal structural types for the docs basic-auth hook. Using the real
 // FastifyRequest/FastifyReply types breaks the build because
@@ -44,6 +45,7 @@ async function bootstrap() {
   );
 
   app.useLogger(app.get(Logger));
+  app.useWebSocketAdapter(new WsAdapter(app));
 
   const port = process.env.PORT || 4000;
   const apiPrefix = process.env.API_PREFIX || 'api/v1';

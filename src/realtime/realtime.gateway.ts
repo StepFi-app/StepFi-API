@@ -1,44 +1,85 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
-import { WebSocketServer, WebSocket } from 'ws';
-import { ConfigService } from '@nestjs/config';
+import { Logger } from '@nestjs/common';
+import {
+  WebSocketGateway,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+} from '@nestjs/websockets';
+import { JwtService } from '@nestjs/jwt';
+import { WebSocket } from 'ws';
+import { IncomingMessage } from 'http';
 
-@Injectable()
-export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
+interface AuthenticatedWebSocket extends WebSocket {
+  wallet?: string;
+}
+
+@WebSocketGateway({ path: '/realtime' })
+export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(RealtimeGateway.name);
-  private wss: WebSocketServer;
+  private readonly activeConnections = new Map<string, Set<AuthenticatedWebSocket>>();
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(private readonly jwtService: JwtService) {}
 
-  onModuleInit() {
-    const port = Number(this.configService.get<number>('WEBSOCKET_PORT', 3005));
-    this.wss = new WebSocketServer({ port });
-    this.logger.log(`WebSocket Gateway initialized on port ${port}`);
+  async handleConnection(client: AuthenticatedWebSocket, req: IncomingMessage): Promise<void> {
+    const url = new URL(req.url || '', 'http://localhost');
+    let token = url.searchParams.get('token');
 
-    this.wss.on('connection', (ws: WebSocket) => {
-      this.logger.log('Client connected to WebSocket Gateway');
+    if (!token) {
+      const protocols = req.headers['sec-websocket-protocol'];
+      if (protocols) {
+        token = (protocols as string).split(',')[0].trim();
+      }
+    }
 
-      ws.on('error', (err) => {
-        this.logger.error(`WebSocket error: ${err.message}`);
-      });
+    if (!token) {
+      this.logger.warn('Connection rejected: missing authentication token');
+      client.close(4001, 'Unauthorized: missing token');
+      return;
+    }
 
-      ws.on('close', () => {
-        this.logger.log('Client disconnected');
-      });
-    });
-  }
+    try {
+      const payload = await this.jwtService.verifyAsync(token);
+      const wallet = payload.wallet as string | undefined;
 
-  onModuleDestroy() {
-    if (this.wss) {
-      this.wss.close(() => {
-        this.logger.log('WebSocket Gateway server closed');
-      });
+      if (!wallet) {
+        this.logger.warn('Connection rejected: token payload missing wallet address');
+        client.close(4002, 'Unauthorized: missing wallet claim');
+        return;
+      }
+
+      client.wallet = wallet;
+      let connections = this.activeConnections.get(wallet);
+      if (!connections) {
+        connections = new Set<AuthenticatedWebSocket>();
+        this.activeConnections.set(wallet, connections);
+      }
+      connections.add(client);
+      this.logger.log(`Client authenticated successfully for wallet: ${wallet}`);
+    } catch (err) {
+      this.logger.warn(`Connection rejected: token verification failed: ${err.message}`);
+      client.close(4003, 'Unauthorized: invalid token');
     }
   }
 
-  broadcast(event: string, payload: unknown): void {
-    if (!this.wss) return;
+  handleDisconnect(client: AuthenticatedWebSocket): void {
+    const wallet = client.wallet;
+    if (wallet) {
+      const connections = this.activeConnections.get(wallet);
+      if (connections) {
+        connections.delete(client);
+        if (connections.size === 0) {
+          this.activeConnections.delete(wallet);
+        }
+      }
+      this.logger.log(`Client disconnected for wallet: ${wallet}`);
+    }
+  }
+
+  sendToUser(walletAddress: string, event: string, payload: unknown): void {
+    const connections = this.activeConnections.get(walletAddress);
+    if (!connections) return;
+
     const message = JSON.stringify({ event, payload });
-    this.wss.clients.forEach((client) => {
+    connections.forEach((client) => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(message);
       }
@@ -46,6 +87,10 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
   }
 
   getClientsCount(): number {
-    return this.wss ? this.wss.clients.size : 0;
+    let count = 0;
+    this.activeConnections.forEach((connections) => {
+      count += connections.size;
+    });
+    return count;
   }
 }

@@ -1,82 +1,163 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
 import { RealtimeGateway } from '../../../src/realtime/realtime.gateway';
-import { WebSocketServer, WebSocket } from 'ws';
+import { JwtService } from '@nestjs/jwt';
+import { WebSocket } from 'ws';
+import { IncomingMessage } from 'http';
 
-jest.mock('ws');
+interface AuthenticatedWebSocket extends WebSocket {
+  wallet?: string;
+}
 
 describe('RealtimeGateway', () => {
   let gateway: RealtimeGateway;
-  let configService: ConfigService;
+  let jwtService: JwtService;
 
-  const mockConfig = {
-    get: jest.fn().mockReturnValue(3005),
-  };
-
-  const mockWss = {
-    on: jest.fn(),
-    close: jest.fn((cb) => cb && cb()),
-    clients: new Set<any>(),
+  const mockJwtService = {
+    verifyAsync: jest.fn(),
   };
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    mockWss.clients.clear();
-    (WebSocketServer as unknown as jest.Mock).mockReturnValue(mockWss);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RealtimeGateway,
         {
-          provide: ConfigService,
-          useValue: mockConfig,
+          provide: JwtService,
+          useValue: mockJwtService,
         },
       ],
     }).compile();
 
     gateway = module.get<RealtimeGateway>(RealtimeGateway);
-    configService = module.get<ConfigService>(ConfigService);
+    jwtService = module.get<JwtService>(JwtService);
   });
 
-  it('should initialize WebSocketServer on module init', () => {
-    gateway.onModuleInit();
-    expect(WebSocketServer).toHaveBeenCalledWith({ port: 3005 });
-    expect(mockWss.on).toHaveBeenCalledWith('connection', expect.any(Function));
+  it('should be defined', () => {
+    expect(gateway).toBeDefined();
   });
 
-  it('should close WebSocketServer on module destroy', () => {
-    gateway.onModuleInit();
-    gateway.onModuleDestroy();
-    expect(mockWss.close).toHaveBeenCalled();
+  describe('handleConnection', () => {
+    let mockClient: AuthenticatedWebSocket;
+    let mockReq: IncomingMessage;
+
+    beforeEach(() => {
+      mockClient = {
+        close: jest.fn(),
+        send: jest.fn(),
+        readyState: WebSocket.OPEN,
+        wallet: undefined,
+      } as unknown as AuthenticatedWebSocket;
+
+      mockReq = {
+        url: '/realtime?token=valid_token',
+        headers: {},
+      } as unknown as IncomingMessage;
+    });
+
+    it('should reject connection when token is missing', async () => {
+      mockReq = {
+        url: '/realtime',
+        headers: {},
+      } as unknown as IncomingMessage;
+
+      await gateway.handleConnection(mockClient, mockReq);
+
+      expect(mockClient.close).toHaveBeenCalledWith(4001, 'Unauthorized: missing token');
+    });
+
+    it('should reject connection when token fails verification', async () => {
+      mockJwtService.verifyAsync.mockRejectedValue(new Error('Invalid token'));
+      await gateway.handleConnection(mockClient, mockReq);
+
+      expect(mockJwtService.verifyAsync).toHaveBeenCalledWith('valid_token');
+      expect(mockClient.close).toHaveBeenCalledWith(4003, 'Unauthorized: invalid token');
+    });
+
+    it('should reject connection when token is valid but has no wallet claim', async () => {
+      mockJwtService.verifyAsync.mockResolvedValue({});
+      await gateway.handleConnection(mockClient, mockReq);
+
+      expect(mockClient.close).toHaveBeenCalledWith(4002, 'Unauthorized: missing wallet claim');
+    });
+
+    it('should accept connection, authenticate wallet, and increment client count', async () => {
+      mockJwtService.verifyAsync.mockResolvedValue({ wallet: 'wallet123' });
+      await gateway.handleConnection(mockClient, mockReq);
+
+      expect(mockClient.wallet).toBe('wallet123');
+      expect(gateway.getClientsCount()).toBe(1);
+    });
+
+    it('should extract token from sec-websocket-protocol header if query string is empty', async () => {
+      mockReq = {
+        url: '/realtime',
+        headers: {
+          'sec-websocket-protocol': 'header_token',
+        },
+      } as unknown as IncomingMessage;
+
+      mockJwtService.verifyAsync.mockResolvedValue({ wallet: 'wallet123' });
+
+      await gateway.handleConnection(mockClient, mockReq);
+
+      expect(mockJwtService.verifyAsync).toHaveBeenCalledWith('header_token');
+      expect(mockClient.wallet).toBe('wallet123');
+    });
   });
 
-  it('should broadcast event to all open clients', () => {
-    gateway.onModuleInit();
+  describe('handleDisconnect', () => {
+    it('should cleanly remove connection and decrement client count on disconnect', async () => {
+      const mockClient = {
+        close: jest.fn(),
+        send: jest.fn(),
+        readyState: WebSocket.OPEN,
+        wallet: 'wallet123',
+      } as unknown as AuthenticatedWebSocket;
 
-    const mockClient1 = {
-      readyState: WebSocket.OPEN,
-      send: jest.fn(),
-    };
-    const mockClient2 = {
-      readyState: WebSocket.CLOSED,
-      send: jest.fn(),
-    };
-    mockWss.clients.add(mockClient1);
-    mockWss.clients.add(mockClient2);
+      const mockReq = {
+        url: '/realtime?token=valid_token',
+        headers: {},
+      } as unknown as IncomingMessage;
 
-    gateway.broadcast('test_event', { key: 'value' });
+      mockJwtService.verifyAsync.mockResolvedValue({ wallet: 'wallet123' });
 
-    expect(mockClient1.send).toHaveBeenCalledWith(
-      JSON.stringify({ event: 'test_event', payload: { key: 'value' } }),
-    );
-    expect(mockClient2.send).not.toHaveBeenCalled();
+      await gateway.handleConnection(mockClient, mockReq);
+      expect(gateway.getClientsCount()).toBe(1);
+
+      gateway.handleDisconnect(mockClient);
+      expect(gateway.getClientsCount()).toBe(0);
+    });
   });
 
-  it('should return clients count', () => {
-    gateway.onModuleInit();
-    expect(gateway.getClientsCount()).toBe(0);
+  describe('sendToUser', () => {
+    it('should deliver event only to the correct authenticated wallet address', async () => {
+      const mockClient1 = {
+        close: jest.fn(),
+        readyState: WebSocket.OPEN,
+        send: jest.fn(),
+        wallet: 'walletA',
+      } as unknown as AuthenticatedWebSocket;
 
-    mockWss.clients.add({ readyState: WebSocket.OPEN });
-    expect(gateway.getClientsCount()).toBe(1);
+      const mockClient2 = {
+        close: jest.fn(),
+        readyState: WebSocket.OPEN,
+        send: jest.fn(),
+        wallet: 'walletB',
+      } as unknown as AuthenticatedWebSocket;
+
+      mockJwtService.verifyAsync.mockResolvedValueOnce({ wallet: 'walletA' });
+      mockJwtService.verifyAsync.mockResolvedValueOnce({ wallet: 'walletB' });
+
+      await gateway.handleConnection(mockClient1, { url: '/realtime?token=tokA', headers: {} } as unknown as IncomingMessage);
+      await gateway.handleConnection(mockClient2, { url: '/realtime?token=tokB', headers: {} } as unknown as IncomingMessage);
+
+      gateway.sendToUser('walletA', 'test_event', { msg: 'hello' });
+
+      expect(mockClient1.send).toHaveBeenCalledWith(
+        JSON.stringify({ event: 'test_event', payload: { msg: 'hello' } }),
+      );
+      expect(mockClient2.send).not.toHaveBeenCalled();
+    });
   });
 });
