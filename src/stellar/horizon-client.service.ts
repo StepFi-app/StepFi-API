@@ -101,6 +101,11 @@ export class HorizonClientService implements OnModuleInit {
   async submitTransaction(
     transaction: StellarSdk.Transaction | StellarSdk.FeeBumpTransaction,
   ): Promise<Record<string, unknown>> {
+    // Note: Transaction submission retries via withFailover rely on Stellar's
+    // ledger-level idempotency. If a submission succeeds on one endpoint but the
+    // response is lost, retrying the identical signed transaction/sequence number
+    // on a subsequent endpoint is safe, as it will either yield the original result
+    // or fail idempotently with a sequence number error (tx_bad_seq).
     return this.withFailover(async (url) => {
       const server = new StellarSdk.Horizon.Server(url);
       const result = await server.submitTransaction(transaction);
