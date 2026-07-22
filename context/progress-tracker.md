@@ -6,6 +6,16 @@ pure chore/docs commits). Direct pushes to main must also be logged here.
 
 ---
 
+## 2026-07-22
+
+- Synchronized the vendor-registry client with the deployed contract by using
+  the current function names and Stellar `Address` arguments.
+- Replaced the stale vendor `active` flag with the contract's typed status,
+  added strict status decoding, and limited missing-vendor handling to contract
+  error code 4 so integration drift now fails loudly.
+- Added client-level tests for exact function names, argument encoding, status
+  validation, and contract error handling (#96).
+
 ## 2026-07-19
 
 - Wired `LiquidityContractClient` (restored under `src/blockchain/contracts/liquidity-contract.client.ts`) into `LiquidityService` constructor.

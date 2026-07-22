@@ -15,6 +15,7 @@ export { LIQUIDITY_POOL_CONTRACT_ID_KEY } from './liquidity-pool.interface';
 
 export type {
   VendorInfo,
+  VendorStatus,
   IVendorRegistryClient,
 } from './vendor-registry.interface';
 export { VENDOR_REGISTRY_CONTRACT_ID_KEY } from './vendor-registry.interface';

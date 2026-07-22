@@ -14,6 +14,7 @@ export type {
   CreateLoanParams,
   PoolStats,
   VendorInfo,
+  VendorStatus,
   ProtocolParameters,
 } from './interfaces';
 

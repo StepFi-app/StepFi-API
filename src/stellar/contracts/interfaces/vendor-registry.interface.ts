@@ -1,9 +1,11 @@
 export const VENDOR_REGISTRY_CONTRACT_ID_KEY = 'VENDOR_REGISTRY_CONTRACT_ID';
 
+export type VendorStatus = 'Pending' | 'Approved' | 'Suspended' | 'Rejected';
+
 export interface VendorInfo {
   id: string;
   name: string;
-  active: boolean;
+  status: VendorStatus;
 }
 
 export interface IVendorRegistryClient {

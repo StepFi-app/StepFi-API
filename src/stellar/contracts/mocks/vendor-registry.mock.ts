@@ -11,7 +11,7 @@ export class MockVendorRegistryContractClient {
     async (vendorId: string): Promise<VendorInfo | null> => ({
       id: vendorId,
       name: 'Mock Vendor',
-      active: true,
+      status: 'Approved',
     }),
   );
 }

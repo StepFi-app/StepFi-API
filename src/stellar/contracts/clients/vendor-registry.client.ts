@@ -2,8 +2,19 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from 'stellar-sdk';
 import { SorobanService } from '../../../blockchain/soroban/soroban.service';
-import { VendorInfo, VENDOR_REGISTRY_CONTRACT_ID_KEY } from '../interfaces/vendor-registry.interface';
+import {
+  VendorInfo,
+  VendorStatus,
+  VENDOR_REGISTRY_CONTRACT_ID_KEY,
+} from '../interfaces/vendor-registry.interface';
 import { ContractNotConfiguredError, ContractReadError } from '../errors';
+
+const VENDOR_STATUSES: readonly VendorStatus[] = [
+  'Pending',
+  'Approved',
+  'Suspended',
+  'Rejected',
+];
 
 @Injectable()
 export class VendorRegistryContractClient {
@@ -28,17 +39,19 @@ export class VendorRegistryContractClient {
       throw new ContractNotConfiguredError('Vendor registry contract');
     }
 
-    const vendorIdArg = StellarSdk.nativeToScVal(vendorId, { type: 'string' });
+    const vendorAddressArg = this.toAddressScVal(vendorId);
 
     try {
       const result = await this.sorobanService.simulateContractCall(
         this.contractId,
-        'is_vendor_active',
-        [vendorIdArg],
+        'is_active',
+        [vendorAddressArg],
       );
       return Boolean(StellarSdk.scValToNative(result));
     } catch (error) {
-      this.logger.error(`Failed to check vendor active status for ${vendorId}: ${error.message}`);
+      this.logger.error(
+        `Failed to check vendor active status for ${vendorId}: ${this.getErrorMessage(error)}`,
+      );
       throw new ContractReadError('vendor active status');
     }
   }
@@ -48,13 +61,13 @@ export class VendorRegistryContractClient {
       throw new ContractNotConfiguredError('Vendor registry contract');
     }
 
-    const vendorIdArg = StellarSdk.nativeToScVal(vendorId, { type: 'string' });
+    const vendorAddressArg = this.toAddressScVal(vendorId);
 
     try {
       const result = await this.sorobanService.simulateContractCall(
         this.contractId,
-        'get_vendor',
-        [vendorIdArg],
+        'get_vendor_info',
+        [vendorAddressArg],
       );
       const raw = StellarSdk.scValToNative(result) as Record<string, unknown>;
 
@@ -63,20 +76,48 @@ export class VendorRegistryContractClient {
       }
 
       return {
-        id: String(raw['id'] ?? raw['vendor_id'] ?? ''),
+        id: String(raw['id'] ?? raw['vendor_id'] ?? vendorId),
         name: String(raw['name'] ?? ''),
-        active: Boolean(raw['active'] ?? raw['is_active'] ?? false),
+        status: this.parseVendorStatus(raw['status']),
       };
     } catch (error) {
-      if (
-        error.message?.includes('HostError') ||
-        error.message?.includes('Status(ContractError')
-      ) {
+      if (this.isVendorNotFoundError(error)) {
         this.logger.debug(`No vendor found for ${vendorId}`);
         return null;
       }
-      this.logger.error(`Failed to get vendor ${vendorId}: ${error.message}`);
+      this.logger.error(`Failed to get vendor ${vendorId}: ${this.getErrorMessage(error)}`);
       throw new ContractReadError('vendor info');
     }
+  }
+
+  private toAddressScVal(vendorId: string): StellarSdk.xdr.ScVal {
+    return StellarSdk.nativeToScVal(StellarSdk.Address.fromString(vendorId), {
+      type: 'address',
+    });
+  }
+
+  private parseVendorStatus(rawStatus: unknown): VendorStatus {
+    const status = Array.isArray(rawStatus) ? rawStatus[0] : rawStatus;
+
+    if (typeof status === 'string' && VENDOR_STATUSES.includes(status as VendorStatus)) {
+      return status as VendorStatus;
+    }
+
+    throw new Error(`Unknown vendor status: ${String(status)}`);
+  }
+
+  private isVendorNotFoundError(error: unknown): boolean {
+    const message = this.getErrorMessage(error);
+
+    return (
+      message.includes('VendorNotFound') ||
+      /Error\(Contract,\s*#?4\)|ContractError\(4\)|Status\(ContractError\(4\)\)/.test(
+        message,
+      )
+    );
+  }
+
+  private getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 }
