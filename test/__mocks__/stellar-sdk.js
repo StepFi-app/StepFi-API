@@ -53,6 +53,7 @@ module.exports = {
       })),
     })),
   },
+  NetworkError: class NetworkError extends Error {},
   BASE_FEE: '100',
   Networks: {
     PUBLIC: 'Public Global Stellar Network ; September 2015',

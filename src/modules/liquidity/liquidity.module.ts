@@ -6,13 +6,13 @@ import { LiquidityController } from './liquidity.controller';
 import { LiquidityService } from './liquidity.service';
 import { AuthModule } from '../auth/auth.module';
 import { SupabaseService } from '../../database/supabase.client';
-import { StellarModule } from '../../stellar/stellar.module';
+import { BlockchainModule } from '../../blockchain/blockchain.module';
 
 @Module({
   imports: [
     ConfigModule,
     AuthModule,
-    StellarModule,
+    BlockchainModule,
     CacheModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

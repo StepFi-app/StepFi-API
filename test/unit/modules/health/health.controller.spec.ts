@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HealthController } from '../../../../src/modules/health/health.controller';
 import { HealthService } from '../../../../src/modules/health/health.service';
+import { ServiceUnavailableException } from '@nestjs/common';
 
 describe('HealthController', () => {
   let controller: HealthController;
@@ -50,6 +51,19 @@ describe('HealthController', () => {
       expect(result).toEqual(expectedResult);
       expect(healthService.check).toHaveBeenCalledTimes(1);
     });
+
+    it('should throw ServiceUnavailableException if health is degraded', async () => {
+      const degradedResult = {
+        status: 'degraded',
+        timestamp: new Date().toISOString(),
+        service: 'StepFi API',
+      };
+
+      mockHealthService.check.mockResolvedValue(degradedResult);
+
+      await expect(controller.check()).rejects.toThrow(ServiceUnavailableException);
+      expect(healthService.check).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('checkDatabase', () => {
@@ -66,6 +80,20 @@ describe('HealthController', () => {
       const result = await controller.checkDatabase();
 
       expect(result).toEqual(expectedResult);
+      expect(healthService.checkDatabaseMinimal).toHaveBeenCalledTimes(1);
+    });
+
+    it('should throw ServiceUnavailableException if database connection failed', async () => {
+      const failedResult = {
+        status: 'error',
+        database: 'disconnected',
+        message: 'Connection failed',
+        timestamp: new Date().toISOString(),
+      };
+
+      mockHealthService.checkDatabaseMinimal.mockResolvedValue(failedResult);
+
+      await expect(controller.checkDatabase()).rejects.toThrow(ServiceUnavailableException);
       expect(healthService.checkDatabaseMinimal).toHaveBeenCalledTimes(1);
     });
   });

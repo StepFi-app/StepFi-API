@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { HealthService } from './health.service';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 
@@ -13,6 +13,9 @@ export class HealthController {
   @ApiResponse({ status: 503, description: 'One or more systems degraded' })
   async check() {
     const result = await this.healthService.check();
+    if (result.status !== 'ok') {
+      throw new ServiceUnavailableException(result);
+    }
     return result;
   }
 
@@ -21,7 +24,11 @@ export class HealthController {
   @ApiResponse({ status: 200, description: 'Database is connected' })
   @ApiResponse({ status: 503, description: 'Database connection failed' })
   async checkDatabase() {
-    return this.healthService.checkDatabaseMinimal();
+    const result = await this.healthService.checkDatabaseMinimal();
+    if (result.status !== 'ok') {
+      throw new ServiceUnavailableException(result);
+    }
+    return result;
   }
 
   @Get('sentry-test')
