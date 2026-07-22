@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from 'stellar-sdk';
 import { SorobanService } from '../../../blockchain/soroban/soroban.service';
 import { VendorInfo, VENDOR_REGISTRY_CONTRACT_ID_KEY } from '../interfaces/vendor-registry.interface';
-import { ContractNotConfiguredError, ContractReadError } from '../errors';
+import { ContractNotConfiguredError, ContractReadError, ContractTxBuildError } from '../errors';
 
 @Injectable()
 export class VendorRegistryContractClient {
@@ -28,12 +28,12 @@ export class VendorRegistryContractClient {
       throw new ContractNotConfiguredError('Vendor registry contract');
     }
 
-    const vendorIdArg = StellarSdk.nativeToScVal(vendorId, { type: 'string' });
+    const vendorIdArg = this.addressArg(vendorId);
 
     try {
       const result = await this.sorobanService.simulateContractCall(
         this.contractId,
-        'is_vendor_active',
+        'is_active',
         [vendorIdArg],
       );
       return Boolean(StellarSdk.scValToNative(result));
@@ -48,12 +48,12 @@ export class VendorRegistryContractClient {
       throw new ContractNotConfiguredError('Vendor registry contract');
     }
 
-    const vendorIdArg = StellarSdk.nativeToScVal(vendorId, { type: 'string' });
+    const vendorIdArg = this.addressArg(vendorId);
 
     try {
       const result = await this.sorobanService.simulateContractCall(
         this.contractId,
-        'get_vendor',
+        'get_vendor_info',
         [vendorIdArg],
       );
       const raw = StellarSdk.scValToNative(result) as Record<string, unknown>;
@@ -63,9 +63,11 @@ export class VendorRegistryContractClient {
       }
 
       return {
-        id: String(raw['id'] ?? raw['vendor_id'] ?? ''),
+        id: vendorId,
         name: String(raw['name'] ?? ''),
-        active: Boolean(raw['active'] ?? raw['is_active'] ?? false),
+        active:
+          String(raw['status'] ?? '').toLowerCase().includes('approved') ||
+          Boolean(raw['active'] ?? raw['is_active'] ?? false),
       };
     } catch (error) {
       if (
@@ -78,5 +80,47 @@ export class VendorRegistryContractClient {
       this.logger.error(`Failed to get vendor ${vendorId}: ${error.message}`);
       throw new ContractReadError('vendor info');
     }
+  }
+
+  buildApproveVendorXdr(admin: string, vendor: string): Promise<string> {
+    return this.buildStatusTransaction('approve_vendor', admin, vendor);
+  }
+
+  buildSuspendVendorXdr(admin: string, vendor: string): Promise<string> {
+    return this.buildStatusTransaction('suspend_vendor', admin, vendor);
+  }
+
+  private async buildStatusTransaction(
+    method: 'approve_vendor' | 'suspend_vendor',
+    admin: string,
+    vendor: string,
+  ): Promise<string> {
+    if (!this.contractId) {
+      throw new ContractNotConfiguredError('Vendor registry contract');
+    }
+
+    try {
+      const server = this.sorobanService.getServer();
+      const sourceAccount = await server.getAccount(admin);
+      const contract = new StellarSdk.Contract(this.contractId);
+      const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: this.sorobanService.getNetworkPassphrase(),
+      })
+        .addOperation(contract.call(method, this.addressArg(admin), this.addressArg(vendor)))
+        .setTimeout(300)
+        .build();
+
+      const prepared = await server.prepareTransaction(transaction);
+      return prepared.toXDR();
+    } catch (error) {
+      if (error instanceof ContractNotConfiguredError) throw error;
+      this.logger.error(`Failed to build ${method} transaction: ${error.message}`);
+      throw new ContractTxBuildError(method);
+    }
+  }
+
+  private addressArg(address: string): StellarSdk.xdr.ScVal {
+    return StellarSdk.nativeToScVal(StellarSdk.Address.fromString(address), { type: 'address' });
   }
 }

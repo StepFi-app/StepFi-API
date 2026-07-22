@@ -9,7 +9,12 @@ import {
 import { createHash, randomBytes } from 'crypto';
 import { SupabaseService } from '../../database/supabase.client';
 import { VendorsRepository, VendorDetailRecord } from '../../database/repositories/vendors.repository';
-import { VendorResponseDto, VendorType } from './dto/vendor.dto';
+import {
+  VendorResponseDto,
+  VendorStatus,
+  VendorStatusChangeResponseDto,
+  VendorType,
+} from './dto/vendor.dto';
 import { RegisterVendorDto } from './dto/register-vendor.dto';
 import { VendorDashboardDto } from './dto/vendor-dashboard.dto';
 import { VendorLoanDto, VendorLoansPageDto } from './dto/vendor-loan.dto';
@@ -21,6 +26,7 @@ import {
 } from './dto/vendor-product.dto';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
 import { ApiKeyResponseDto, ApiKeyCreatedResponseDto } from './dto/api-key-response.dto';
+import { VendorRegistryContractClient } from '../../stellar/contracts/clients/vendor-registry.client';
 
 const ACTIVE_LOAN_STATUS = 'active';
 const DEFAULTED_LOAN_STATUS = 'defaulted';
@@ -69,6 +75,7 @@ interface VendorRow {
   name: string;
   type: VendorType;
   verified: boolean;
+  status: VendorStatus;
   website: string | null;
   country: string | null;
   city: string | null;
@@ -97,6 +104,7 @@ export class VendorsService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly vendorsRepository: VendorsRepository,
+    private readonly vendorRegistryClient: VendorRegistryContractClient,
   ) {}
 
   async getAll(type?: VendorType): Promise<VendorResponseDto[]> {
@@ -135,6 +143,42 @@ export class VendorsService {
     }
 
     return this.mapToDto(data as VendorRow);
+  }
+
+  async buildApproveVendorXdr(
+    adminWallet: string,
+    vendorId: string,
+  ): Promise<VendorStatusChangeResponseDto> {
+    const vendor = await this.requireVendorForTransition(vendorId, VendorStatus.PENDING);
+    const unsignedXdr = await this.vendorRegistryClient.buildApproveVendorXdr(
+      adminWallet,
+      vendor.wallet_address,
+    );
+
+    return {
+      unsignedXdr,
+      description: `Approve vendor ${vendor.name}`,
+      vendorId: vendor.id,
+      targetStatus: VendorStatus.APPROVED,
+    };
+  }
+
+  async buildSuspendVendorXdr(
+    adminWallet: string,
+    vendorId: string,
+  ): Promise<VendorStatusChangeResponseDto> {
+    const vendor = await this.requireVendorForTransition(vendorId, VendorStatus.APPROVED);
+    const unsignedXdr = await this.vendorRegistryClient.buildSuspendVendorXdr(
+      adminWallet,
+      vendor.wallet_address,
+    );
+
+    return {
+      unsignedXdr,
+      description: `Suspend vendor ${vendor.name}`,
+      vendorId: vendor.id,
+      targetStatus: VendorStatus.SUSPENDED,
+    };
   }
 
   /**
@@ -413,6 +457,28 @@ export class VendorsService {
     return vendor;
   }
 
+  private async requireVendorForTransition(
+    vendorId: string,
+    expectedStatus: VendorStatus,
+  ): Promise<VendorDetailRecord> {
+    const vendor = await this.vendorsRepository.findById(vendorId);
+    if (!vendor || !vendor.wallet_address) {
+      throw new NotFoundException({
+        code: 'VENDOR_NOT_FOUND',
+        message: 'Vendor not found.',
+      });
+    }
+
+    if (vendor.status !== expectedStatus) {
+      throw new ConflictException({
+        code: 'VENDOR_STATUS_CONFLICT',
+        message: `Vendor must be ${expectedStatus} before this action can be performed.`,
+      });
+    }
+
+    return vendor;
+  }
+
   private async requireOwnedProduct(vendorId: string, productId: string): Promise<void> {
     const client = this.supabaseService.getClient();
     const { data, error } = await client
@@ -621,6 +687,7 @@ export class VendorsService {
       name: data.name,
       type: data.type,
       verified: data.verified,
+      status: data.status,
       website: data.website ?? undefined,
       country: data.country ?? undefined,
       city: data.city ?? undefined,

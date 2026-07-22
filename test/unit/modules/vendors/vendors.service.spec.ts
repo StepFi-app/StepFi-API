@@ -4,6 +4,7 @@ import { VendorsService } from '../../../../src/modules/vendors/vendors.service'
 import { VendorsRepository } from '../../../../src/database/repositories/vendors.repository';
 import { SupabaseService } from '../../../../src/database/supabase.client';
 import { VendorType } from '../../../../src/modules/vendors/dto/vendor.dto';
+import { VendorRegistryContractClient } from '../../../../src/stellar/contracts/clients/vendor-registry.client';
 
 /**
  * Builds a Supabase query-builder mock whose every chainable method returns the
@@ -23,7 +24,7 @@ describe('VendorsService', () => {
   let service: VendorsService;
 
   const wallet = 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW';
-  const vendorRecord = { id: 'vendor-1', wallet_address: wallet, name: 'Acme', type: 'school', verified: true };
+  const vendorRecord = { id: 'vendor-1', wallet_address: wallet, name: 'Acme', type: 'school', verified: false, status: 'pending' };
 
   const vendorRow = {
     id: 'vendor-1',
@@ -31,6 +32,7 @@ describe('VendorsService', () => {
     name: 'Acme University',
     type: 'school',
     verified: false,
+    status: 'pending',
     website: 'https://acme.edu',
     country: 'Nigeria',
     city: 'Lagos',
@@ -43,7 +45,11 @@ describe('VendorsService', () => {
     getClient: jest.fn(),
     getServiceRoleClient: jest.fn(),
   };
-  const mockVendorsRepository = { findByWallet: jest.fn() };
+  const mockVendorsRepository = { findByWallet: jest.fn(), findById: jest.fn() };
+  const mockVendorRegistryClient = {
+    buildApproveVendorXdr: jest.fn(),
+    buildSuspendVendorXdr: jest.fn(),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -51,6 +57,7 @@ describe('VendorsService', () => {
         VendorsService,
         { provide: SupabaseService, useValue: mockSupabaseService },
         { provide: VendorsRepository, useValue: mockVendorsRepository },
+        { provide: VendorRegistryContractClient, useValue: mockVendorRegistryClient },
       ],
     }).compile();
 
@@ -82,6 +89,7 @@ describe('VendorsService', () => {
       expect(result.type).toBe(VendorType.SCHOOL);
       expect(result.description).toBe('STEM programs');
       expect(result.walletAddress).toBe(wallet);
+      expect(result.status).toBe('pending');
     });
 
     it('throws ConflictException when the wallet is already a vendor', async () => {
@@ -91,6 +99,54 @@ describe('VendorsService', () => {
         service.registerVendor(wallet, { name: 'Acme', category: VendorType.SCHOOL, country: 'Nigeria' }),
       ).rejects.toThrow(ConflictException);
       expect(mockSupabaseClient.from).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('vendor approval lifecycle', () => {
+    it('builds approval XDR without updating local status', async () => {
+      mockVendorsRepository.findById.mockResolvedValue(vendorRecord);
+      mockVendorRegistryClient.buildApproveVendorXdr.mockResolvedValue('approve-xdr');
+
+      const result = await service.buildApproveVendorXdr('GADMIN', 'vendor-1');
+
+      expect(result).toMatchObject({
+        unsignedXdr: 'approve-xdr',
+        vendorId: 'vendor-1',
+        targetStatus: 'approved',
+      });
+      expect(mockVendorRegistryClient.buildApproveVendorXdr).toHaveBeenCalledWith(
+        'GADMIN',
+        wallet,
+      );
+      expect(mockSupabaseService.getServiceRoleClient).not.toHaveBeenCalled();
+    });
+
+    it('rejects approval when the vendor is not pending', async () => {
+      mockVendorsRepository.findById.mockResolvedValue({
+        ...vendorRecord,
+        status: 'approved',
+      });
+
+      await expect(service.buildApproveVendorXdr('GADMIN', 'vendor-1')).rejects.toThrow(
+        ConflictException,
+      );
+      expect(mockVendorRegistryClient.buildApproveVendorXdr).not.toHaveBeenCalled();
+    });
+
+    it('builds suspension XDR only for an approved vendor', async () => {
+      mockVendorsRepository.findById.mockResolvedValue({
+        ...vendorRecord,
+        status: 'approved',
+      });
+      mockVendorRegistryClient.buildSuspendVendorXdr.mockResolvedValue('suspend-xdr');
+
+      const result = await service.buildSuspendVendorXdr('GADMIN', 'vendor-1');
+
+      expect(result.targetStatus).toBe('suspended');
+      expect(mockVendorRegistryClient.buildSuspendVendorXdr).toHaveBeenCalledWith(
+        'GADMIN',
+        wallet,
+      );
     });
   });
 

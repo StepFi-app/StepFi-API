@@ -10,4 +10,8 @@ export interface IVendorRegistryClient {
   isVendorActive(vendorId: string): Promise<boolean>;
 
   getVendor(vendorId: string): Promise<VendorInfo | null>;
+
+  buildApproveVendorXdr(admin: string, vendor: string): Promise<string>;
+
+  buildSuspendVendorXdr(admin: string, vendor: string): Promise<string>;
 }

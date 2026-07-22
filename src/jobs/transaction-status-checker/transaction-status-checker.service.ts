@@ -19,6 +19,8 @@ interface PendingTransaction {
 interface TransactionMetadata {
   loanId?: string;
   amount?: number;
+  vendorWallet?: string;
+  vendorStatus?: 'approved' | 'suspended';
 }
 
 interface TransactionStatusResult {
@@ -32,6 +34,8 @@ interface FollowUpResult {
   loanId?: string;
   remainingBalance?: number;
   loanStatus?: string;
+  vendorWallet?: string;
+  vendorStatus?: 'approved' | 'suspended';
 }
 
 /**
@@ -351,9 +355,20 @@ export class TransactionStatusCheckerService {
     }
 
     const metadata = this.parseTransactionMetadata(transaction.xdr);
-    if (!metadata?.loanId) {
+    if (!metadata) {
       return {};
     }
+
+    if (
+      (transaction.type === TransactionType.VENDOR_APPROVE ||
+        transaction.type === TransactionType.VENDOR_SUSPEND) &&
+      metadata.vendorWallet &&
+      metadata.vendorStatus
+    ) {
+      return this.applyVendorStatus(metadata.vendorWallet, metadata.vendorStatus);
+    }
+
+    if (!metadata.loanId) return {};
 
     if (transaction.type === TransactionType.LOAN_CREATE) {
       return this.activatePendingLoan(metadata.loanId, transaction.user_wallet);
@@ -364,6 +379,55 @@ export class TransactionStatusCheckerService {
     }
 
     return { loanId: metadata.loanId };
+  }
+
+  private async applyVendorStatus(
+    vendorWallet: string,
+    status: 'approved' | 'suspended',
+  ): Promise<FollowUpResult> {
+    const db = this.supabaseService.getServiceRoleClient();
+    const expectedStatus = status === 'approved' ? 'pending' : 'approved';
+    const { data, error } = await db
+      .from('vendors')
+      .update({
+        status,
+        verified: status === 'approved',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('wallet_address', vendorWallet)
+      .eq('status', expectedStatus)
+      .select('id')
+      .maybeSingle();
+
+    if (error) {
+      this.logger.warn(
+        {
+          context: 'TransactionStatusCheckerService',
+          action: 'applyVendorStatus',
+          vendorWallet,
+          status,
+          error: error.message,
+        },
+        'Failed to update vendor status after successful transaction',
+      );
+      return { vendorWallet };
+    }
+
+    if (!data) {
+      this.logger.warn(
+        {
+          context: 'TransactionStatusCheckerService',
+          action: 'applyVendorStatus',
+          vendorWallet,
+          status,
+          expectedStatus,
+        },
+        'Vendor status was not updated because its local state no longer matched',
+      );
+      return { vendorWallet };
+    }
+
+    return { vendorWallet, vendorStatus: status };
   }
 
   private async activatePendingLoan(
@@ -544,6 +608,15 @@ export class TransactionStatusCheckerService {
         return { loanId, amount };
       }
 
+      if (functionName === 'approve_vendor' || functionName === 'suspend_vendor') {
+        const vendorWallet = this.contractAddressToString(nativeArgs[1]);
+        if (!vendorWallet) return null;
+        return {
+          vendorWallet,
+          vendorStatus: functionName === 'approve_vendor' ? 'approved' : 'suspended',
+        };
+      }
+
       return null;
     } catch (error) {
       this.logger.warn(
@@ -557,6 +630,15 @@ export class TransactionStatusCheckerService {
       );
       return null;
     }
+  }
+
+  private contractAddressToString(value: unknown): string | undefined {
+    if (typeof value === 'string') return value;
+    if (value && typeof value === 'object' && 'toString' in value) {
+      const address = String(value);
+      return address.startsWith('G') ? address : undefined;
+    }
+    return undefined;
   }
 
   private async createNotification(
@@ -635,6 +717,20 @@ export class TransactionStatusCheckerService {
         type: 'loan_repay_success',
         title: 'Loan Payment Confirmed',
         message: `Your loan repayment transaction was confirmed on Stellar.${amountMessage}`,
+      };
+    }
+
+    if (
+      transaction.type === TransactionType.VENDOR_APPROVE ||
+      transaction.type === TransactionType.VENDOR_SUSPEND
+    ) {
+      const approved = transaction.type === TransactionType.VENDOR_APPROVE;
+      return {
+        type: approved ? 'vendor_approve_success' : 'vendor_suspend_success',
+        title: approved ? 'Vendor Approved' : 'Vendor Suspended',
+        message: followUp.vendorStatus
+          ? `Vendor status was updated to ${followUp.vendorStatus} after Stellar confirmation.`
+          : 'The vendor status transaction was confirmed on Stellar.',
       };
     }
 

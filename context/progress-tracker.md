@@ -13,6 +13,10 @@ pure chore/docs commits). Direct pushes to main must also be logged here.
   The audit-log controller now requires both a valid JWT and an allowlisted
   wallet; self-selected user roles remain unchanged and cannot grant admin
   access.
+- Added admin-only vendor approval and suspension XDR endpoints backed by the
+  vendor-registry contract. Vendor lifecycle state is mirrored locally only
+  after the existing transaction status checker confirms the signed
+  transaction on Stellar.
 
 ## 2026-07-19
 

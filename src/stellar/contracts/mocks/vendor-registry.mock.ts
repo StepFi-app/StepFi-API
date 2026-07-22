@@ -14,4 +14,12 @@ export class MockVendorRegistryContractClient {
       active: true,
     }),
   );
+
+  buildApproveVendorXdr = jest.fn(
+    async (_admin: string, _vendor: string): Promise<string> => 'mock-approve-vendor-xdr',
+  );
+
+  buildSuspendVendorXdr = jest.fn(
+    async (_admin: string, _vendor: string): Promise<string> => 'mock-suspend-vendor-xdr',
+  );
 }

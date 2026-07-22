@@ -6,6 +6,8 @@ export enum TransactionType {
   LOAN_REPAY = 'loan_repay',
   DEPOSIT = 'deposit',
   WITHDRAW = 'withdraw',
+  VENDOR_APPROVE = 'vendor_approve',
+  VENDOR_SUSPEND = 'vendor_suspend',
 }
 
 /**

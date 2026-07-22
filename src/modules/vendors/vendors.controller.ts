@@ -11,6 +11,7 @@ import {
   ParseIntPipe,
   DefaultValuePipe,
   UseGuards,
+  UseInterceptors,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
@@ -26,7 +27,11 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles, RolesGuard } from '../../auth/guards/roles.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { VendorsService } from './vendors.service';
-import { VendorResponseDto, VendorType } from './dto/vendor.dto';
+import {
+  VendorResponseDto,
+  VendorStatusChangeResponseDto,
+  VendorType,
+} from './dto/vendor.dto';
 import { RegisterVendorDto } from './dto/register-vendor.dto';
 import { VendorDashboardDto } from './dto/vendor-dashboard.dto';
 import { VendorLoansPageDto } from './dto/vendor-loan.dto';
@@ -38,6 +43,9 @@ import {
 } from './dto/vendor-product.dto';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
 import { ApiKeyResponseDto, ApiKeyCreatedResponseDto } from './dto/api-key-response.dto';
+import { AdminGuard } from '../../auth/guards/admin.guard';
+import { AuditInterceptor } from '../../common/interceptors/audit.interceptor';
+import { AuditAction } from '../../common/decorators/audit-action.decorator';
 
 /** Standard response envelope: { success, data, message }. */
 interface Envelope<T> {
@@ -260,6 +268,56 @@ export class VendorsController {
     @Param('id', ParseUUIDPipe) keyId: string,
   ): Promise<void> {
     return this.vendorsService.revokeApiKey(user.wallet, keyId);
+  }
+
+  @Post(':id/approve')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseInterceptors(AuditInterceptor)
+  @AuditAction('vendors', 'APPROVE_VENDOR')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Build an unsigned vendor approval transaction',
+    description:
+      'Requires an allowlisted admin wallet. The API returns unsigned XDR and does not update local vendor state until the signed transaction is confirmed on-chain.',
+  })
+  @ApiParam({ name: 'id', description: 'Vendor UUID' })
+  @ApiResponse({ status: 200, description: 'Unsigned approval XDR', type: VendorStatusChangeResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthorized - missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Forbidden - wallet is not an administrator' })
+  @ApiResponse({ status: 404, description: 'Vendor not found' })
+  @ApiResponse({ status: 409, description: 'Vendor is not pending' })
+  async approveVendor(
+    @CurrentUser() user: { wallet: string },
+    @Param('id', ParseUUIDPipe) vendorId: string,
+  ): Promise<Envelope<VendorStatusChangeResponseDto>> {
+    const data = await this.vendorsService.buildApproveVendorXdr(user.wallet, vendorId);
+    return { success: true, data, message: 'Vendor approval transaction built successfully' };
+  }
+
+  @Post(':id/suspend')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseInterceptors(AuditInterceptor)
+  @AuditAction('vendors', 'SUSPEND_VENDOR')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Build an unsigned vendor suspension transaction',
+    description:
+      'Requires an allowlisted admin wallet. The API returns unsigned XDR and does not update local vendor state until the signed transaction is confirmed on-chain.',
+  })
+  @ApiParam({ name: 'id', description: 'Vendor UUID' })
+  @ApiResponse({ status: 200, description: 'Unsigned suspension XDR', type: VendorStatusChangeResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthorized - missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Forbidden - wallet is not an administrator' })
+  @ApiResponse({ status: 404, description: 'Vendor not found' })
+  @ApiResponse({ status: 409, description: 'Vendor is not approved' })
+  async suspendVendor(
+    @CurrentUser() user: { wallet: string },
+    @Param('id', ParseUUIDPipe) vendorId: string,
+  ): Promise<Envelope<VendorStatusChangeResponseDto>> {
+    const data = await this.vendorsService.buildSuspendVendorXdr(user.wallet, vendorId);
+    return { success: true, data, message: 'Vendor suspension transaction built successfully' };
   }
 
   // --- Public single-vendor lookup (wildcard, declared LAST) ---

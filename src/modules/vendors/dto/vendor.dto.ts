@@ -9,6 +9,13 @@ export enum VendorType {
   SUBSCRIPTIONS = 'subscriptions',
 }
 
+export enum VendorStatus {
+  PENDING = 'pending',
+  APPROVED = 'approved',
+  SUSPENDED = 'suspended',
+  REJECTED = 'rejected',
+}
+
 export class CreateVendorDto {
   @ApiProperty({ example: 'University of Lagos' })
   @IsString()
@@ -40,9 +47,24 @@ export class VendorResponseDto {
   @ApiProperty() name: string;
   @ApiProperty({ enum: VendorType }) type: VendorType;
   @ApiProperty() verified: boolean;
+  @ApiProperty({ enum: VendorStatus }) status: VendorStatus;
   @ApiPropertyOptional() website?: string;
   @ApiPropertyOptional() country?: string;
   @ApiPropertyOptional() city?: string;
   @ApiPropertyOptional() description?: string;
   @ApiProperty() createdAt: string;
+}
+
+export class VendorStatusChangeResponseDto {
+  @ApiProperty({ description: 'Unsigned transaction XDR for the admin wallet to sign' })
+  unsignedXdr: string;
+
+  @ApiProperty({ example: 'Approve vendor Acme University' })
+  description: string;
+
+  @ApiProperty({ description: 'Local vendor UUID' })
+  vendorId: string;
+
+  @ApiProperty({ enum: VendorStatus })
+  targetStatus: VendorStatus;
 }

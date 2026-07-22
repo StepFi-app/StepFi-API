@@ -2,6 +2,7 @@ import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { SupabaseService } from '../supabase.client';
 
 export type VendorType = 'school' | 'bootcamp' | 'electronics' | 'books' | 'subscriptions';
+export type VendorStatus = 'pending' | 'approved' | 'suspended' | 'rejected';
 
 export interface VendorRecord {
     id: string;
@@ -9,6 +10,7 @@ export interface VendorRecord {
     name: string;
     type: VendorType;
     verified: boolean;
+    status: VendorStatus;
 }
 
 export interface VendorDetailRecord extends VendorRecord {
