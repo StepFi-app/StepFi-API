@@ -67,6 +67,7 @@ describe('HealthService', () => {
         status: 'ok',
         database: 'connected',
         message: 'Supabase reachable',
+        timestamp: new Date().toISOString(),
       });
       jest.spyOn(service, 'checkHorizon').mockResolvedValue({ status: 'ok' });
       jest.spyOn(service, 'checkIndexerLag').mockResolvedValue({ status: 'ok' });
