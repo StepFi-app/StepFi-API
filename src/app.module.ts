@@ -29,10 +29,11 @@ import { CreditScoringModule } from './modules/credit-scoring/credit-scoring.mod
 import { AdminModule } from './modules/admin/admin.module';
 import { CorrelationIdMiddleware } from './common/logger/correlation-id.middleware';
 import { StateReconciliationModule } from './jobs/state-reconciliation/state-reconciliation.module';
+import { validateEnvironment } from './config/env';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment }),
     SentryModule.forRoot(),
     ScheduleModule.forRoot(),
     LoggerModule,

@@ -6,6 +6,14 @@ pure chore/docs commits). Direct pushes to main must also be logged here.
 
 ---
 
+## 2026-07-22
+
+- Added a fail-closed `ADMIN_WALLETS` allowlist validated as Stellar public
+  keys at startup, plus a shared `AdminGuard` for privileged API endpoints.
+  The audit-log controller now requires both a valid JWT and an allowlisted
+  wallet; self-selected user roles remain unchanged and cannot grant admin
+  access.
+
 ## 2026-07-19
 
 - Wired `LiquidityContractClient` (restored under `src/blockchain/contracts/liquidity-contract.client.ts`) into `LiquidityService` constructor.

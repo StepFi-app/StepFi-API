@@ -6,10 +6,11 @@ import { AuditLogListResponseDto } from './dto/audit-log-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AuditInterceptor } from '../../common/interceptors/audit.interceptor';
 import { AuditAction } from '../../common/decorators/audit-action.decorator';
+import { AdminGuard } from '../../auth/guards/admin.guard';
 
 @ApiTags('admin')
 @Controller('admin')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, AdminGuard)
 @ApiBearerAuth()
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
@@ -35,6 +36,7 @@ export class AuditController {
     type: AuditLogListResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized - missing or invalid admin JWT' })
+  @ApiResponse({ status: 403, description: 'Forbidden - wallet is not an administrator' })
   async getAuditLogs(@Query() query: AuditLogQueryDto) {
     return this.auditService.findMany(query);
   }
