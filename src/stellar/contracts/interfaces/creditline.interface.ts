@@ -16,7 +16,7 @@ export interface ICreditLineClient {
     params: CreateLoanParams,
   ): Promise<string>;
 
-  buildRepayLoanTx(
+  buildRepayInstallmentTx(
     userWallet: string,
     loanId: string,
     amount: number,

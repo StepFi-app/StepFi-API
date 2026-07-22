@@ -75,7 +75,7 @@ describe('Loan Lifecycle Flow (e2e)', () => {
 
   const mockCreditLineContract = {
     buildCreateLoanTransaction: jest.fn(),
-    buildRepayLoanTx: jest.fn(),
+    buildRepayInstallmentTx: jest.fn(),
   };
 
   const mockTransactionsService = {
@@ -288,7 +288,7 @@ describe('Loan Lifecycle Flow (e2e)', () => {
       return `xdr-loan-create-${payload.loanId}`;
     });
 
-    mockCreditLineContract.buildRepayLoanTx.mockImplementation(async (_wallet, loanId, amount) => {
+    mockCreditLineContract.buildRepayInstallmentTx.mockImplementation(async (_wallet, loanId, amount) => {
       return `xdr-loan-repay-${loanId}-${amount}`;
     });
 

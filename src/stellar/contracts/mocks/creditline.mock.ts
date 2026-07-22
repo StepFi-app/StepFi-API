@@ -9,7 +9,7 @@ export class MockCreditLineContractClient {
     },
   );
 
-  buildRepayLoanTx = jest.fn(
+  buildRepayInstallmentTx = jest.fn(
     async (_userWallet: string, _loanId: string, _amount: number): Promise<string> => {
       return 'AAAAAgAAAQAAAAAAAAAAiZ3TgwAAAAAyMZyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
     },

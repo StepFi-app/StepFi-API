@@ -213,7 +213,7 @@ export class LoansService {
       });
     }
 
-    return this.creditLineContractClient.buildRepayLoanTx(
+    return this.creditLineContractClient.buildRepayInstallmentTx(
       wallet,
       loan.loan_id,
       amount,

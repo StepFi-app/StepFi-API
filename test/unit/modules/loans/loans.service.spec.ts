@@ -110,7 +110,7 @@ describe('LoansService', () => {
     mockSupabaseFrom.insert.mockResolvedValue({ error: null });
     mockSupabaseFrom.update.mockReturnThis();
     mockCreditLineContractClient.buildCreateLoanTransaction.mockResolvedValue('AAAAAgAAAAC...');
-    mockCreditLineContractClient.buildRepayLoanTx.mockResolvedValue('AAAAAgAAAAA...');
+    mockCreditLineContractClient.buildRepayInstallmentTx.mockResolvedValue('AAAAAgAAAAA...');
   });
 
   afterEach(() => {
@@ -386,7 +386,7 @@ describe('LoansService', () => {
           willComplete: false,
         },
       });
-      expect(mockCreditLineContractClient.buildRepayLoanTx).toHaveBeenCalledWith(
+      expect(mockCreditLineContractClient.buildRepayInstallmentTx).toHaveBeenCalledWith(
         validWallet,
         'chain-loan-1',
         108.33,

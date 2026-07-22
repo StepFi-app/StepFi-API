@@ -66,7 +66,7 @@ export class CreditLineContractClient {
     return prepared.toXDR();
   }
 
-  async buildRepayLoanTx(userWallet: string, loanId: string, amount: number): Promise<string> {
+  async buildRepayInstallmentTx(userWallet: string, loanId: string, amount: number): Promise<string> {
     this.ensureConfigured();
 
     try {
