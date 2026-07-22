@@ -4,6 +4,7 @@ import { IndexerService } from '../../../../src/indexer/indexer.service';
 import { EventParserService } from '../../../../src/indexer/event-parser.service';
 import { SupabaseService } from '../../../../src/database/supabase.client';
 import { SorobanService } from '../../../../src/blockchain/soroban/soroban.service';
+import { JobMonitorService } from '../../../../src/jobs/monitoring/job-monitor.service';
 import {
   LoanEventType,
   ReputationEventType,
@@ -99,6 +100,13 @@ describe('IndexerService', () => {
         EventParserService,
         { provide: SupabaseService, useValue: mockSupabaseService },
         { provide: SorobanService, useValue: mockSorobanService },
+        {
+          provide: JobMonitorService,
+          useValue: {
+            recordSuccess: jest.fn(),
+            recordFailure: jest.fn(),
+          },
+        },
         {
           provide: ConfigService,
           useValue: {
@@ -202,6 +210,13 @@ describe('IndexerService', () => {
           EventParserService,
           { provide: SupabaseService, useValue: mockSupabaseService },
           { provide: SorobanService, useValue: mockSorobanService },
+          {
+            provide: JobMonitorService,
+            useValue: {
+              recordSuccess: jest.fn(),
+              recordFailure: jest.fn(),
+            },
+          },
           {
             provide: ConfigService,
             useValue: { get: jest.fn().mockReturnValue('') },

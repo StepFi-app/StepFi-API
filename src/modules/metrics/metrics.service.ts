@@ -13,6 +13,9 @@ export const INDEXER_LAG = 'indexer_lag_ledgers';
 export const HORIZON_HEALTH = 'horizon_up';
 export const DB_POOL_OPEN = 'db_pool_open';
 export const RECONCILIATION_DRIFT = 'state_reconciliation_drift';
+export const JOB_LAST_SUCCESS_TIMESTAMP_SECONDS =
+  'job_last_success_timestamp_seconds';
+export const JOB_CONSECUTIVE_FAILURES = 'job_consecutive_failures';
 
 export const metricProviders = [
   makeCounterProvider({
@@ -43,6 +46,16 @@ export const metricProviders = [
     help: 'Current reconciliation drift count by mismatch type',
     labelNames: ['type'] as const,
   }),
+  makeGaugeProvider({
+    name: JOB_LAST_SUCCESS_TIMESTAMP_SECONDS,
+    help: 'Unix timestamp of the last successful run for a background job',
+    labelNames: ['job'] as const,
+  }),
+  makeGaugeProvider({
+    name: JOB_CONSECUTIVE_FAILURES,
+    help: 'Number of consecutive failed runs for a background job',
+    labelNames: ['job'] as const,
+  }),
 ];
 
 @Injectable()
@@ -60,6 +73,10 @@ export class MetricsService {
     private readonly dbPoolOpen: Gauge<string>,
     @InjectMetric(RECONCILIATION_DRIFT)
     private readonly reconciliationDrift: Gauge<string>,
+    @InjectMetric(JOB_LAST_SUCCESS_TIMESTAMP_SECONDS)
+    private readonly jobLastSuccessTimestamp: Gauge<string>,
+    @InjectMetric(JOB_CONSECUTIVE_FAILURES)
+    private readonly jobConsecutiveFailures: Gauge<string>,
   ) {}
 
   async getMetrics(): Promise<string> {
@@ -89,5 +106,13 @@ export class MetricsService {
 
   setReconciliationDrift(type: string, count: number): void {
     this.reconciliationDrift.labels(type).set(count);
+  }
+
+  setJobLastSuccessTimestamp(job: string, timestampSeconds: number): void {
+    this.jobLastSuccessTimestamp.labels(job).set(timestampSeconds);
+  }
+
+  setJobConsecutiveFailures(job: string, count: number): void {
+    this.jobConsecutiveFailures.labels(job).set(count);
   }
 }

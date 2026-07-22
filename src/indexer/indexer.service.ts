@@ -5,6 +5,7 @@ import * as StellarSdk from 'stellar-sdk';
 import { SupabaseService } from '../database/supabase.client';
 import { SorobanService } from '../blockchain/soroban/soroban.service';
 import { EventParserService } from './event-parser.service';
+import { JobMonitorService } from '../jobs/monitoring/job-monitor.service';
 import {
   ParsedContractEvent,
   LoanEventType,
@@ -31,6 +32,7 @@ export class IndexerService {
     private readonly sorobanService: SorobanService,
     private readonly supabaseService: SupabaseService,
     private readonly eventParser: EventParserService,
+    private readonly jobMonitorService: JobMonitorService,
   ) {
     this.loanContractId =
       this.configService.get<string>('CREDIT_LINE_CONTRACT_ID') || '';
@@ -49,10 +51,18 @@ export class IndexerService {
     this.logger.log('Blockchain indexer cycle started');
 
     try {
-      await this.indexLoanContract();
-      await this.indexReputationContract();
+      const loanError = await this.indexLoanContract();
+      const reputationError = await this.indexReputationContract();
+      const runError = loanError ?? reputationError;
+
+      if (runError) {
+        this.jobMonitorService.recordFailure('indexer', runError);
+      } else {
+        this.jobMonitorService.recordSuccess('indexer');
+      }
     } catch (error) {
       this.logger.error({ error: error.message, stack: error.stack }, 'Indexer cycle failed');
+      this.jobMonitorService.recordFailure('indexer', error);
     } finally {
       this.isRunning = false;
     }
@@ -60,25 +70,29 @@ export class IndexerService {
     this.logger.log('Blockchain indexer cycle completed');
   }
 
-  private async indexLoanContract(): Promise<void> {
+  private async indexLoanContract(): Promise<Error | null> {
     try {
       await this.indexContract(this.loanContractId, 'loan');
+      return null;
     } catch (error) {
       this.logger.error(
         { error: error.message, stack: error.stack },
         'Failed to index loan contract events — will retry next cycle',
       );
+      return error instanceof Error ? error : new Error(String(error));
     }
   }
 
-  private async indexReputationContract(): Promise<void> {
+  private async indexReputationContract(): Promise<Error | null> {
     try {
       await this.indexContract(this.reputationContractId, 'reputation');
+      return null;
     } catch (error) {
       this.logger.error(
         { error: error.message, stack: error.stack },
         'Failed to index reputation contract events — will retry next cycle',
       );
+      return error instanceof Error ? error : new Error(String(error));
     }
   }
 

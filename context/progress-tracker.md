@@ -6,6 +6,15 @@ pure chore/docs commits). Direct pushes to main must also be logged here.
 
 ---
 
+## 2026-07-22
+
+- Added shared background-job monitoring for the indexer, transaction status
+  checker, loan payment reminders, nonce cleanup, and Supabase keep-alive.
+  Successful runs now publish Prometheus timestamps, failed runs track
+  consecutive failures and report to Sentry at power-of-two intervals to avoid
+  alert floods, and `/health` degrades when a job exceeds its independently
+  configurable staleness threshold.
+
 ## 2026-07-19
 
 - Wired `LiquidityContractClient` (restored under `src/blockchain/contracts/liquidity-contract.client.ts`) into `LiquidityService` constructor.

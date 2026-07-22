@@ -29,10 +29,12 @@ import { CreditScoringModule } from './modules/credit-scoring/credit-scoring.mod
 import { AdminModule } from './modules/admin/admin.module';
 import { CorrelationIdMiddleware } from './common/logger/correlation-id.middleware';
 import { StateReconciliationModule } from './jobs/state-reconciliation/state-reconciliation.module';
+import { validateEnvironment } from './config/env';
+import { JobMonitorModule } from './jobs/monitoring/job-monitor.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment }),
     SentryModule.forRoot(),
     ScheduleModule.forRoot(),
     LoggerModule,
@@ -45,6 +47,7 @@ import { StateReconciliationModule } from './jobs/state-reconciliation/state-rec
     AuthModule,
     HealthModule,
     MetricsModule,
+    JobMonitorModule,
     LoansModule,
     ReputationModule,
     UsersModule,

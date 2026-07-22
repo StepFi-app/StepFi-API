@@ -1,5 +1,6 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { SupabaseService } from '../../database/supabase.client';
+import { JobMonitorService } from '../monitoring/job-monitor.service';
 
 /**
  * Keeps the Supabase project active by issuing a lightweight read every 3 days.
@@ -10,8 +11,12 @@ import { SupabaseService } from '../../database/supabase.client';
 @Injectable()
 export class SupabaseKeepAliveService implements OnModuleInit {
   private readonly logger = new Logger(SupabaseKeepAliveService.name);
+  private isRunning = false;
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly jobMonitorService: JobMonitorService,
+  ) {}
 
   onModuleInit(): void {
     // Run every 3 days in milliseconds
@@ -21,6 +26,12 @@ export class SupabaseKeepAliveService implements OnModuleInit {
   }
 
   async ping(): Promise<void> {
+    if (this.isRunning) {
+      this.logger.debug('Supabase keep-alive already running, skipping');
+      return;
+    }
+    this.isRunning = true;
+
     try {
       // Lightweight read (equivalent to `SELECT 1 FROM users LIMIT 1`) that keeps
       // the Supabase project active so the free tier does not pause it for
@@ -36,8 +47,12 @@ export class SupabaseKeepAliveService implements OnModuleInit {
       }
 
       this.logger.log('Supabase keep-alive ping successful');
+      this.jobMonitorService.recordSuccess('supabaseKeepAlive');
     } catch (error) {
       this.logger.error('Keep-alive ping failed', error);
+      this.jobMonitorService.recordFailure('supabaseKeepAlive', error);
+    } finally {
+      this.isRunning = false;
     }
   }
 }

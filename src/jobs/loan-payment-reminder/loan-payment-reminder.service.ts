@@ -8,6 +8,7 @@ import {
   ReminderSummary,
   ReminderType,
 } from './interfaces/reminder.interfaces';
+import { JobMonitorService } from '../monitoring/job-monitor.service';
 
 const REMINDER_TITLES: Record<ReminderType, string> = {
   payment_reminder_3d: 'Payment Due in 3 Days',
@@ -37,12 +38,16 @@ export class LoanPaymentReminderService {
   private readonly logger = new Logger(LoanPaymentReminderService.name);
   private isRunning = false;
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly jobMonitorService: JobMonitorService,
+  ) {}
 
   @Cron('0 9 * * *')
   async sendPaymentReminders(): Promise<void> {
     if (this.isRunning) return;
     this.isRunning = true;
+    let runFailure: unknown;
 
     const summary: ReminderSummary = {
       total: 0,
@@ -86,13 +91,23 @@ export class LoanPaymentReminderService {
           summary.created++;
           summary.breakdown[candidate.reminderType]++;
         } catch (error) {
+          runFailure ??= error;
           summary.failed++;
           this.logger.error(`Failed to process reminder candidate for loan ${candidate.loan.loan_id}: ${error.message}`);
         }
       }
     } catch (error) {
+      runFailure = error;
       this.logger.error(`Fatal error during reminder job: ${error.message}`);
     } finally {
+      if (runFailure) {
+        this.jobMonitorService.recordFailure(
+          'loanPaymentReminder',
+          runFailure,
+        );
+      } else {
+        this.jobMonitorService.recordSuccess('loanPaymentReminder');
+      }
       this.logger.log(`Reminder job complete — created: ${summary.created}, skipped: ${summary.skipped}, failed: ${summary.failed}`);
       this.isRunning = false;
     }

@@ -3,6 +3,7 @@ import { HealthService } from '../../../../src/modules/health/health.service';
 import { SupabaseService } from '../../../../src/database/supabase.client';
 import { ConfigService } from '@nestjs/config';
 import { HorizonClientService } from '../../../../src/stellar/horizon-client.service';
+import { JobMonitorService } from '../../../../src/jobs/monitoring/job-monitor.service';
 
 describe('HealthService', () => {
   let service: HealthService;
@@ -34,6 +35,19 @@ describe('HealthService', () => {
     getTransaction: jest.fn(),
   };
 
+  const mockJobMonitorService = {
+    getHealthStatuses: jest.fn().mockReturnValue([
+      {
+        job: 'indexer',
+        status: 'ok',
+        lastSuccessAt: null,
+        ageSeconds: 0,
+        thresholdSeconds: 180,
+        consecutiveFailures: 0,
+      },
+    ]),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -45,6 +59,10 @@ describe('HealthService', () => {
         {
           provide: HorizonClientService,
           useValue: mockHorizonClientService,
+        },
+        {
+          provide: JobMonitorService,
+          useValue: mockJobMonitorService,
         },
       ],
     }).compile();
@@ -78,7 +96,34 @@ describe('HealthService', () => {
       expect(result).toHaveProperty('timestamp');
       expect(result).toHaveProperty('service', 'StepFi API');
       expect(result).toHaveProperty('checks');
+      expect(result.checks.jobs).toHaveProperty('status', 'ok');
       expect(result.timestamp).toBeDefined();
+    });
+
+    it('should report degraded when a monitored job is stale', async () => {
+      jest.spyOn(service, 'checkDatabase').mockResolvedValue({
+        status: 'ok',
+        database: 'connected',
+        message: 'Supabase reachable',
+        timestamp: new Date().toISOString(),
+      });
+      jest.spyOn(service, 'checkHorizon').mockResolvedValue({ status: 'ok' });
+      jest.spyOn(service, 'checkIndexerLag').mockResolvedValue({ status: 'ok' });
+      mockJobMonitorService.getHealthStatuses.mockReturnValueOnce([
+        {
+          job: 'indexer',
+          status: 'stale',
+          lastSuccessAt: '2026-07-22T00:00:00.000Z',
+          ageSeconds: 181,
+          thresholdSeconds: 180,
+          consecutiveFailures: 2,
+        },
+      ]);
+
+      const result = await service.check();
+
+      expect(result.status).toBe('degraded');
+      expect(result.checks.jobs.status).toBe('degraded');
     });
   });
 

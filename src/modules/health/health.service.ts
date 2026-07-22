@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SupabaseService } from '../../database/supabase.client';
 import { HorizonClientService } from '../../stellar/horizon-client.service';
+import { JobMonitorService } from '../../jobs/monitoring/job-monitor.service';
 
 @Injectable()
 export class HealthService {
@@ -9,6 +10,7 @@ export class HealthService {
   constructor(
     private readonly horizonClientService: HorizonClientService,
     private readonly supabaseService: SupabaseService,
+    private readonly jobMonitorService: JobMonitorService,
   ) {}
 
   async check() {
@@ -17,8 +19,12 @@ export class HealthService {
       this.checkHorizon(),
       this.checkIndexerLag(),
     ]);
+    const jobs = this.jobMonitorService.getHealthStatuses();
+    const jobsStatus = jobs.some((job) => job.status === 'stale')
+      ? 'degraded'
+      : 'ok';
 
-    const allOk = [db, horizon, indexer].every(
+    const allOk = [db, horizon, indexer, { status: jobsStatus }].every(
       (c) => c.status === 'ok',
     );
 
@@ -30,6 +36,10 @@ export class HealthService {
         database: db,
         horizon: horizon,
         indexer: indexer,
+        jobs: {
+          status: jobsStatus,
+          details: jobs,
+        },
       },
     };
   }

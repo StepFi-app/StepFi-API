@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from 'stellar-sdk';
 import { SupabaseService } from '../../database/supabase.client';
 import { TransactionType } from '../../modules/transactions/dto/submit-transaction-request.dto';
+import { JobMonitorService } from '../monitoring/job-monitor.service';
 
 interface PendingTransaction {
   id: string;
@@ -56,6 +57,7 @@ export class TransactionStatusCheckerService {
   constructor(
     private readonly configService: ConfigService,
     private readonly supabaseService: SupabaseService,
+    private readonly jobMonitorService: JobMonitorService,
   ) {
     const horizonUrl =
       this.configService.get<string>('STELLAR_HORIZON_URL') ||
@@ -76,6 +78,7 @@ export class TransactionStatusCheckerService {
       return;
     }
     this.isRunning = true;
+    let runFailure: unknown;
 
     this.logger.log(
       {
@@ -140,6 +143,7 @@ export class TransactionStatusCheckerService {
             );
           }
         } catch (error) {
+          runFailure ??= error;
           this.logger.error(
             {
               context: 'TransactionStatusCheckerService',
@@ -153,6 +157,7 @@ export class TransactionStatusCheckerService {
         }
       }
     } catch (error) {
+      runFailure = error;
       this.logger.error(
         {
           context: 'TransactionStatusCheckerService',
@@ -164,6 +169,14 @@ export class TransactionStatusCheckerService {
       );
     } finally {
       await this.cleanupOldTransactions();
+      if (runFailure) {
+        this.jobMonitorService.recordFailure(
+          'transactionStatusChecker',
+          runFailure,
+        );
+      } else {
+        this.jobMonitorService.recordSuccess('transactionStatusChecker');
+      }
       this.isRunning = false;
       this.logger.log(
         {
