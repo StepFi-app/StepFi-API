@@ -102,7 +102,10 @@ export class CreditLineContractClient {
     }
   }
 
-  async buildMarkDefaultedTx(loanId: string): Promise<string> {
+  async buildMarkDefaultedTx(
+    loanId: string,
+    sourceAccount?: StellarSdk.Account,
+  ): Promise<string> {
     this.ensureConfigured();
 
     try {
@@ -111,10 +114,12 @@ export class CreditLineContractClient {
       const networkPassphrase = this.sorobanService.getNetworkPassphrase();
       const loanIdArg = StellarSdk.nativeToScVal(loanId, { type: 'string' });
 
-      const sourceKeypair = StellarSdk.Keypair.random();
-      const sourceAccount = new StellarSdk.Account(sourceKeypair.publicKey(), '0');
+      const source = sourceAccount ?? (() => {
+        const keypair = StellarSdk.Keypair.random();
+        return new StellarSdk.Account(keypair.publicKey(), '0');
+      })();
 
-      const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
+      const tx = new StellarSdk.TransactionBuilder(source, {
         fee: StellarSdk.BASE_FEE,
         networkPassphrase,
       })

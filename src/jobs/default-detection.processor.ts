@@ -1,10 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { ConfigService } from '@nestjs/config';
-import * as StellarSdk from 'stellar-sdk';
 import { SupabaseService } from '../database/supabase.client';
 import { CreditLineContractClient } from '../stellar/contracts/clients/creditline.client';
-import { TransactionsService } from '../modules/transactions/transactions.service';
+import { SequenceManagerService } from '../modules/transactions/sequence-manager.service';
 import { TransactionType } from '../modules/transactions/dto/submit-transaction-request.dto';
 
 interface OverdueLoan {
@@ -19,26 +17,12 @@ const DEFAULT_GRACE_PERIOD_DAYS = 7;
 export class DefaultDetectionProcessor {
   private readonly logger = new Logger(DefaultDetectionProcessor.name);
   private isRunning = false;
-  private readonly adminKeypair: StellarSdk.Keypair | null = null;
 
   constructor(
-    private readonly configService: ConfigService,
     private readonly supabaseService: SupabaseService,
     private readonly creditLineContractClient: CreditLineContractClient,
-    private readonly transactionsService: TransactionsService,
-  ) {
-    const secret = this.configService.get<string>('STELLAR_ADMIN_SECRET');
-    if (secret) {
-      try {
-        this.adminKeypair = StellarSdk.Keypair.fromSecret(secret);
-        this.logger.log(`Admin keypair loaded: ${this.adminKeypair.publicKey().slice(0, 8)}...`);
-      } catch {
-        this.logger.warn('STELLAR_ADMIN_SECRET is invalid — default detection will fail to submit on-chain');
-      }
-    } else {
-      this.logger.warn('STELLAR_ADMIN_SECRET is not set — default detection will skip on-chain submission');
-    }
-  }
+    private readonly sequenceManagerService: SequenceManagerService,
+  ) {}
 
   @Cron('0 * * * *')
   async detectDefaults(): Promise<void> {
@@ -88,32 +72,26 @@ export class DefaultDetectionProcessor {
   }
 
   private async processOverdueLoan(loan: OverdueLoan): Promise<void> {
-    if (this.adminKeypair) {
+    if (this.sequenceManagerService.hasAdminKeypair) {
       try {
-        const unsignedXdr = await this.creditLineContractClient.buildMarkDefaultedTx(loan.loan_id);
-
-        const networkPassphrase =
-          this.configService.get<string>('STELLAR_NETWORK_PASSPHRASE') ||
-          StellarSdk.Networks.TESTNET;
-
-        const transaction = StellarSdk.TransactionBuilder.fromXDR(unsignedXdr, networkPassphrase);
-        transaction.sign(this.adminKeypair);
-        const signedXdr = transaction.toXDR();
-
-        await this.transactionsService.submitTransaction(
-          this.adminKeypair.publicKey(),
-          { xdr: signedXdr, type: TransactionType.LOAN_DEFAULT },
+        await this.sequenceManagerService.submitAdminTransaction(
+          TransactionType.LOAN_DEFAULT,
+          (source) => this.creditLineContractClient.buildMarkDefaultedTx(loan.loan_id, source),
         );
 
         this.logger.log(`mark_defaulted submitted for loan ${loan.loan_id}`);
+        await this.markDefaultedOffChain(loan);
       } catch (error) {
-        this.logger.error(`On-chain mark_defaulted failed for ${loan.loan_id}: ${error.message}`);
+        this.logger.error(
+          `On-chain mark_defaulted failed for ${loan.loan_id}: ${(error as Error).message} — off-chain marking skipped so the loan can be retried on the next cycle`,
+        );
       }
     } else {
-      this.logger.warn(`No admin keypair configured — marking ${loan.loan_id} as defaulted off-chain only`);
+      this.logger.warn(
+        `No admin keypair configured — marking ${loan.loan_id} as defaulted off-chain only`,
+      );
+      await this.markDefaultedOffChain(loan);
     }
-
-    await this.markDefaultedOffChain(loan);
   }
 
   private async markDefaultedOffChain(loan: OverdueLoan): Promise<void> {

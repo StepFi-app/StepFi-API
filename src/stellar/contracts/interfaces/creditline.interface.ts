@@ -1,3 +1,5 @@
+import * as StellarSdk from 'stellar-sdk';
+
 export interface CreateLoanParams {
   loanId: string;
   vendorId: string;
@@ -22,5 +24,8 @@ export interface ICreditLineClient {
     amount: number,
   ): Promise<string>;
 
-  buildMarkDefaultedTx(loanId: string): Promise<string>;
+  buildMarkDefaultedTx(
+    loanId: string,
+    sourceAccount?: StellarSdk.Account,
+  ): Promise<string>;
 }

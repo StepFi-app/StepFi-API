@@ -3,6 +3,7 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TransactionsController } from './transactions.controller';
 import { TransactionsService } from './transactions.service';
+import { SequenceManagerService } from './sequence-manager.service';
 import { AuthModule } from '../auth/auth.module';
 import { SupabaseService } from '../../database/supabase.client';
 import { getRedisConfig } from '../../config/redis.config';
@@ -18,7 +19,7 @@ import { getRedisConfig } from '../../config/redis.config';
     }),
   ],
   controllers: [TransactionsController],
-  providers: [TransactionsService, SupabaseService],
-  exports: [TransactionsService],
+  providers: [TransactionsService, SequenceManagerService, SupabaseService],
+  exports: [TransactionsService, SequenceManagerService],
 })
 export class TransactionsModule {}
