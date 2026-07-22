@@ -51,7 +51,7 @@ describe('Repayment function name alignment', () => {
 
     expect(op.type).toBe('invokeHostFunction');
 
-    const invocation = (op.func as unknown as {
+    const invocation = ((op as unknown as { func: unknown }).func as {
       _value?: { _attributes?: { functionName?: { toString?: () => string }; args?: unknown[] } };
     })?._value?._attributes;
 
