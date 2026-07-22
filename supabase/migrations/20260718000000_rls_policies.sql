@@ -9,6 +9,31 @@
 -- Service role client bypasses RLS entirely for admin/indexer operations
 
 -- ============================================================================
+-- Enable RLS on tables (ensure it's enabled)
+-- ============================================================================
+ALTER TABLE public.learner_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vouches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vendors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sponsor_pools ENABLE ROW LEVEL SECURITY;
+
+-- ============================================================================
+-- RPC function to set wallet session variable for RLS
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.set_app_current_wallet(wallet TEXT)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  PERFORM set_config('app.current_wallet', wallet, true);
+END;
+$$;
+
+-- Grant execute to authenticated users
+GRANT EXECUTE ON FUNCTION public.set_app_current_wallet(TEXT) TO anon;
+GRANT EXECUTE ON FUNCTION public.set_app_current_wallet(TEXT) TO authenticated;
+
+-- ============================================================================
 -- learner_profiles
 -- ============================================================================
 -- Users can read their own profile
@@ -38,17 +63,6 @@ ON public.loans
   FOR SELECT 
   USING (user_wallet = current_setting('app.current_wallet', true)::TEXT);
 
--- Service role (indexer) can insert loans
-CREATE POLICY "Service role can insert loans" 
-ON public.loans
-  FOR INSERT 
-  WITH CHECK (true);
-
--- Service role (indexer) can update loans
-CREATE POLICY "Service role can update loans" 
-ON public.loans
-  FOR UPDATE 
-  USING (true);
 
 -- ============================================================================
 -- vouches
@@ -84,23 +98,6 @@ ON public.vendors
   FOR SELECT 
   USING (true);
 
--- Service role can insert vendors
-CREATE POLICY "Service role can insert vendors" 
-ON public.vendors
-  FOR INSERT 
-  WITH CHECK (true);
-
--- Service role can update vendors
-CREATE POLICY "Service role can update vendors" 
-ON public.vendors
-  FOR UPDATE 
-  USING (true);
-
--- Service role can delete vendors
-CREATE POLICY "Service role can delete vendors" 
-ON public.vendors
-  FOR DELETE 
-  USING (true);
 
 -- ============================================================================
 -- liquidity_positions (pool_positions)
@@ -111,17 +108,6 @@ ON public.liquidity_positions
   FOR SELECT 
   USING (provider_wallet = current_setting('app.current_wallet', true)::TEXT);
 
--- Service role can insert liquidity positions
-CREATE POLICY "Service role can insert liquidity positions" 
-ON public.liquidity_positions
-  FOR INSERT 
-  WITH CHECK (true);
-
--- Service role can update liquidity positions
-CREATE POLICY "Service role can update liquidity positions" 
-ON public.liquidity_positions
-  FOR UPDATE 
-  USING (true);
 
 -- ============================================================================
 -- sponsor_pools
@@ -148,9 +134,10 @@ ON public.sponsor_pools
 -- Notes
 -- ============================================================================
 -- 1. Service role bypasses RLS automatically for all operations
--- 2. The API layer must SET LOCAL app.current_wallet = 'G...' before queries
---    This is done via SupabaseService.getClient() with a custom RPC or session var
--- 3. repayment_installments table does not exist - payment_index is used instead
+-- 2. Non-service-role clients must call set_app_current_wallet(wallet) RPC before queries
+--    to set the app.current_wallet session variable for RLS enforcement
+-- 3. No blanket-permissive policies (WITH CHECK (true)) - service role bypasses RLS
+-- 4. repayment_installments table does not exist - payment_index is used instead
 --    (payment_index is an indexer table managed by service role)
--- 4. pool_positions is implemented as liquidity_positions
--- 5. All tables already have RLS enabled from previous migration 20260213006000
+-- 5. pool_positions is implemented as liquidity_positions
+-- 6. RLS is explicitly enabled on all target tables in this migration
