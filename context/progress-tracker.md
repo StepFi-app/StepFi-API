@@ -6,6 +6,16 @@ pure chore/docs commits). Direct pushes to main must also be logged here.
 
 ---
 
+## 2026-07-19
+
+- Wired `LiquidityContractClient` (restored under `src/blockchain/contracts/liquidity-contract.client.ts`) into `LiquidityService` constructor.
+- Read contract ID from `ConfigService` under `LIQUIDITY_POOL_CONTRACT_ID`.
+- Replaced placeholder deposit/withdraw XDR strings in `LiquidityService` with real transaction simulation and assembly (`buildUnsignedXdr`).
+- Mapped smart contract simulation errors (e.g., custom error codes like 100-104) to HTTP 400 (`BadRequestException`) with typed error codes.
+- Added E2E test `test/e2e/liquidity.e2e-spec.ts` asserting transaction XDR parsing and contract simulation error mapping.
+- Updated existing `test/e2e/modules/liquidity/liquidity-flow.e2e-spec.ts` to mock the new `LiquidityContractClient` structure.
+- Updated `test/unit/modules/liquidity/liquidity.service.spec.ts` unit tests.
+
 ## 2026-07-18
 
 - Added scheduled state reconciliation across indexed on-chain loan,
