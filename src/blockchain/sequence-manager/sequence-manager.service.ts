@@ -35,8 +35,6 @@ interface ManagedAccountState {
   secretKey: StellarSdk.Keypair;
   /** Tail of the per-account serialization promise chain. */
   inflight: Promise<unknown>;
-  /** Tail of the per-account Horizon re-sync lock chain. */
-  reSyncLock: Promise<unknown>;
   /**
    * The sequence number about to be used for the *next* submission on
    * this account. Invariant: starts at `onChain + 1` after every sync,
@@ -234,7 +232,7 @@ export class SequenceManagerService implements OnModuleInit {
         account.pendingSequence = account.pendingSequence + 1n;
 
         if (this.metrics) {
-          this.metrics.observeSequence(account.publicKey, account.pendingSequence);
+          this.metrics.observeSequence(account.publicKey, usedSequence);
           this.metrics.incSubmitted(account.publicKey);
         }
 
@@ -277,37 +275,21 @@ export class SequenceManagerService implements OnModuleInit {
 
   /**
    * Read the on-chain sequence number from Horizon and return the next
-   * sequence usable for a new transaction. Multiple concurrent re-sync
-   * requests for the same account share a single Horizon call through a
-   * per-account lock chain.
+   * sequence usable for a new transaction. Callers are already serialized
+   * by {@link runSerialized}, so no additional lock is needed here.
    */
   private async fetchPendingSequence(account: ManagedAccountState): Promise<bigint> {
-    const previous = account.reSyncLock;
-    let release!: () => void;
-    const next = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    account.reSyncLock = next;
-
     try {
-      await previous.catch(() => undefined);
-
-      try {
-        const response = await this.horizonServer.loadAccount(account.publicKey);
-        // Horizon.AccountResponse.sequence is a string; convert to BigInt so
-        // arithmetic stays correct as the protocol age grows.
-        const onChain = this.readSequenceNumber(response);
-        return onChain + 1n;
-      } catch (error) {
-        if (error instanceof StellarSdk.NotFoundError) {
-          throw new Error(
-            `SequenceManager: source account ${account.publicKey} not found on Horizon`,
-          );
-        }
-        throw error;
+      const response = await this.horizonServer.loadAccount(account.publicKey);
+      const onChain = this.readSequenceNumber(response);
+      return onChain + 1n;
+    } catch (error) {
+      if (error instanceof StellarSdk.NotFoundError) {
+        throw new Error(
+          `SequenceManager: source account ${account.publicKey} not found on Horizon`,
+        );
       }
-    } finally {
-      release();
+      throw error;
     }
   }
 
@@ -406,7 +388,6 @@ export class SequenceManagerService implements OnModuleInit {
           publicKey,
           secretKey: keypair,
           inflight: Promise.resolve(),
-          reSyncLock: Promise.resolve(),
           pendingSequence: null,
         });
       } catch (error) {
