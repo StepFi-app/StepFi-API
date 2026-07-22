@@ -6,7 +6,7 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { LiquidityModule } from '../../../../src/modules/liquidity/liquidity.module';
 import { TransactionsModule } from '../../../../src/modules/transactions/transactions.module';
 import { SupabaseService } from '../../../../src/database/supabase.client';
-import { LiquidityPoolContractClient } from '../../../../src/stellar/contracts/clients/liquidity-pool.client';
+import { LiquidityContractClient } from '../../../../src/blockchain/contracts/liquidity-contract.client';
 import { TransactionsService } from '../../../../src/modules/transactions/transactions.service';
 import { JwtAuthGuard } from '../../../../src/common/guards/jwt-auth.guard';
 import { TransactionType } from '../../../../src/modules/transactions/dto/submit-transaction-request.dto';
@@ -57,7 +57,7 @@ describe('Liquidity Operations Flow (e2e)', () => {
         throw new UnauthorizedException('No token provided');
       }
 
-      req.user = { wallet: validWallet };
+      req.user = { wallet: validWallet, role: 'sponsor' };
       return true;
     }),
   };
@@ -69,6 +69,7 @@ describe('Liquidity Operations Flow (e2e)', () => {
     getLpShares: jest.fn(),
     calculateWithdrawal: jest.fn(),
     buildWithdrawTx: jest.fn(),
+    buildUnsignedXdr: jest.fn(),
   };
 
   const mockTransactionsService = {
@@ -143,7 +144,7 @@ describe('Liquidity Operations Flow (e2e)', () => {
       .useValue(mockCacheManager)
       .overrideProvider(SupabaseService)
       .useValue(mockSupabaseService)
-      .overrideProvider(LiquidityPoolContractClient)
+      .overrideProvider(LiquidityContractClient)
       .useValue(mockLiquidityPoolContractClient)
       .overrideProvider(TransactionsService)
       .useValue(mockTransactionsService)
@@ -169,8 +170,8 @@ describe('Liquidity Operations Flow (e2e)', () => {
 
     state.totalLiquidity = 1000n * STROOPS;
     state.totalShares = 1000n * STROOPS;
-    state.availableLiquidity = 1000n * STROOPS;
-    state.lockedLiquidity = 0n;
+    state.availableLiquidity = 600n * STROOPS;
+    state.lockedLiquidity = 400n * STROOPS;
     state.withdrawalFeeBps = 50n;
     state.userShares = 0n;
     state.totalInvested = 0;
@@ -219,6 +220,19 @@ describe('Liquidity Operations Flow (e2e)', () => {
     mockLiquidityPoolContractClient.buildWithdrawTx.mockImplementation(async (_wallet, sharesInStroops: bigint) => {
       state.pendingWithdrawShares = sharesInStroops;
       return 'AAAAAgWITHDRAW...';
+    });
+
+    mockLiquidityPoolContractClient.buildUnsignedXdr.mockImplementation(async (method, [walletAddress, amount]) => {
+      if (method === 'deposit') {
+        const amountInStroops = BigInt(Math.round(amount * 10_000_000));
+        state.pendingDepositAmount = amountInStroops;
+        state.pendingDepositShares = amountInStroops;
+        return 'AAAAAgDEPOSIT...';
+      } else {
+        const sharesInStroops = BigInt(Math.round(amount * 10_000_000));
+        state.pendingWithdrawShares = sharesInStroops;
+        return 'AAAAAgWITHDRAW...';
+      }
     });
 
     mockTransactionsService.submitTransaction.mockImplementation(async (_wallet, dto) => {

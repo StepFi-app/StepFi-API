@@ -109,6 +109,6 @@ export class CreditLineContractClient {
   }
 
   private toContractAmount(value: number): bigint {
-    return BigInt(Math.round(value * 100));
+    return BigInt(Math.round(value * 10_000_000));
   }
 }

@@ -6,29 +6,24 @@ pure chore/docs commits). Direct pushes to main must also be logged here.
 
 ---
 
-## 2026-07-17
+## 2026-07-19
 
-- Implemented Stellar sequence-number manager (#82):
-  - `src/blockchain/sequence-manager/sequence-manager.service.ts` —
-    serializes per-account submissions via an in-memory promise chain,
-    caches the next sequence number, re-syncs from Horizon on
-    `tx_bad_seq` or restart, supports a configurable channel-account
-    pool for concurrent in-flight transactions, exposes Prometheus
-    metrics (`blockchain_source_submissions_in_flight`,
-    `blockchain_source_bad_seq_retries_total`,
-    `blockchain_source_submissions_total`,
-    `blockchain_source_next_sequence`).
-  - `BlockchainService.submitServerTransaction` is the new public
-    surface; the existing user-signed `submitRepayment` path is
-    unchanged.
-  - Config honours `STELLAR_SOURCE_ACCOUNT_SECRET` (required),
-    `STELLAR_CHANNEL_ACCOUNTS` (optional comma-separated secrets),
-    and `STELLAR_BAD_SEQ_MAX_RETRIES` (default 3).
-  - Concurrency test asserts 10 parallel callers each receive a
-    unique monotonic sequence number without `tx_bad_seq`.
-  - No new dependencies; uses the existing `prom-client`,
-    `@nestjs/schedule`, and the `stellar-sdk` already in
-    `package.json`. Schema unchanged — no Supabase migration required.
+- Wired `LiquidityContractClient` (restored under `src/blockchain/contracts/liquidity-contract.client.ts`) into `LiquidityService` constructor.
+- Read contract ID from `ConfigService` under `LIQUIDITY_POOL_CONTRACT_ID`.
+- Replaced placeholder deposit/withdraw XDR strings in `LiquidityService` with real transaction simulation and assembly (`buildUnsignedXdr`).
+- Mapped smart contract simulation errors (e.g., custom error codes like 100-104) to HTTP 400 (`BadRequestException`) with typed error codes.
+- Added E2E test `test/e2e/liquidity.e2e-spec.ts` asserting transaction XDR parsing and contract simulation error mapping.
+- Updated existing `test/e2e/modules/liquidity/liquidity-flow.e2e-spec.ts` to mock the new `LiquidityContractClient` structure.
+- Updated `test/unit/modules/liquidity/liquidity.service.spec.ts` unit tests.
+
+## 2026-07-18
+
+- Added scheduled state reconciliation across indexed on-chain loan,
+  liquidity, reputation, and transaction state. The idempotent Cron job
+  resolves provisional loan IDs, repairs stale database state, backfills
+  missed transaction records, marks orphaned pending transactions, exports
+  drift metrics, and logs a structured report without making on-chain writes.
+  Cron is used instead of BullMQ per the API's post-Upstash architecture.
 
 ## 2026-07-16
 

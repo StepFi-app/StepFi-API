@@ -1,27 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../../database/supabase.client';
-
-interface HorizonRoot {
-  horizon_version: string;
-  network: string;
-  core_version: string;
-  history_latest_ledger: number;
-}
+import { HorizonClientService } from '../../stellar/horizon-client.service';
 
 @Injectable()
 export class HealthService {
   private readonly logger = new Logger(HealthService.name);
-  private readonly horizonUrl: string;
 
   constructor(
-    private readonly configService: ConfigService,
+    private readonly horizonClientService: HorizonClientService,
     private readonly supabaseService: SupabaseService,
-  ) {
-    this.horizonUrl =
-      this.configService.get<string>('STELLAR_HORIZON_URL') ||
-      'https://horizon-testnet.stellar.org';
-  }
+  ) {}
 
   async check() {
     const [db, horizon, indexer] = await Promise.all([
@@ -49,55 +37,74 @@ export class HealthService {
   async checkDatabase() {
     try {
       const client = this.supabaseService.getClient();
+      if (!client) {
+        throw new Error('Supabase client is unavailable');
+      }
       const { error } = await client.auth.getSession();
       if (error && error.message !== 'Invalid Refresh Token' && !error.message.includes('JWT')) {
         throw error;
       }
-      return { status: 'ok', database: 'connected', message: 'Supabase reachable' };
+      return {
+        status: 'ok',
+        database: 'connected',
+        message: 'Supabase reachable',
+        timestamp: new Date().toISOString(),
+      };
     } catch (error) {
-      this.logger.error({ context: 'HealthService', action: 'checkDatabase', error: error.message });
-      return { status: 'error', database: 'disconnected', message: error.message };
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'object' && error && 'message' in error
+            ? String((error as { message: unknown }).message)
+            : String(error);
+      this.logger.error({ context: 'HealthService', action: 'checkDatabase', error: errorMessage });
+      return {
+        status: 'error',
+        database: 'disconnected',
+        message: errorMessage,
+        timestamp: new Date().toISOString(),
+      };
     }
   }
 
   async checkHorizon(): Promise<{ status: string; [key: string]: unknown }> {
     try {
-      const root = await this.fetchHorizonRoot();
+      const root = await this.horizonClientService.getRoot();
+      const endpoints = this.horizonClientService.getEndpointStatuses();
+      const healthyPrimary = endpoints.some((e) => e.isPrimary && e.status === 'closed');
       return {
-        status: 'ok',
+        status: healthyPrimary ? 'ok' : 'degraded',
         horizon: root.horizon_version,
         network: root.network,
         protocolVersion: root.core_version,
+        endpoints,
       };
     } catch (error) {
-      this.logger.error({ context: 'HealthService', action: 'checkHorizon', error: error.message });
-      return { status: 'error', horizon: 'unreachable', message: error.message };
+      this.logger.error({ context: 'HealthService', action: 'checkHorizon', error: (error as Error).message });
+      return {
+        status: 'error',
+        horizon: 'unreachable',
+        message: (error as Error).message,
+        endpoints: this.horizonClientService.getEndpointStatuses(),
+      };
     }
   }
 
   async checkIndexerLag(): Promise<{ status: string; [key: string]: unknown }> {
     try {
       const cursor = await this.getIndexerCursor();
-      const root = await this.fetchHorizonRoot();
+      const root = await this.horizonClientService.getRoot();
       const latestLedger = root.history_latest_ledger;
       const lag = latestLedger - cursor;
       const status = lag < 100 ? 'ok' : lag < 500 ? 'warning' : 'error';
       return { status, cursor, latestLedger, lag };
     } catch (error) {
-      return { status: 'unknown', message: error.message };
+      return { status: 'unknown', message: (error as Error).message };
     }
   }
 
   async checkDatabaseMinimal() {
     return this.checkDatabase();
-  }
-
-  private async fetchHorizonRoot(): Promise<HorizonRoot> {
-    const response = await fetch(this.horizonUrl);
-    if (!response.ok) {
-      throw new Error(`Horizon returned ${response.status}`);
-    }
-    return response.json() as Promise<HorizonRoot>;
   }
 
   private async getIndexerCursor(): Promise<number> {
