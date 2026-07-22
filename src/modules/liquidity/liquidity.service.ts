@@ -276,8 +276,8 @@ export class LiquidityService {
     }
   }
 
-  private handleContractError(error: any, operation: string): never {
-    const errorMsg = error.message || String(error);
+  private handleContractError(error: unknown, operation: string): never {
+    const errorMsg = error instanceof Error ? error.message : String(error);
     const match = errorMsg.match(/ErrorCode\((\d+)\)|Error\(Contract,\s*#?(\d+)\)|ContractError\((\d+)\)|#(\d+)/);
 
     if (match) {
