@@ -54,13 +54,19 @@ export class SupabaseService {
 
   /**
    * Creates a wallet-scoped client for RLS enforcement.
-   * Uses anon key (non-service-role) and sets app.current_wallet session variable.
-   * This client respects RLS policies, unlike serviceRoleClient which bypasses them.
+   * Uses anon key (non-service-role) which respects RLS policies.
    * 
-   * Note: The session variable must be set per-request via RPC or raw SQL.
-   * Use setWalletSessionVariable() before queries on this client.
+   * IMPORTANT: Before using this client, the caller must execute:
+   * SET LOCAL app.current_wallet = 'G...' via raw SQL
+   * This can be done using client.rpc() with a custom function or
+   * by wrapping queries in a transaction that sets the variable.
+   * 
+   * Example usage:
+   * const client = this.getWalletScopedClient();
+   * await client.rpc('set_app_current_wallet', { wallet: walletAddress });
+   * // Now queries respect RLS
    */
-  getWalletScopedClient(walletAddress: string): SupabaseClient {
+  getWalletScopedClient(): SupabaseClient {
     return createClient(
       this.configService.get<string>('SUPABASE_URL'),
       this.configService.get<string>('SUPABASE_ANON_KEY'),
@@ -77,11 +83,4 @@ export class SupabaseService {
     );
   }
 
-  /**
-   * Sets the Postgres session variable for RLS enforcement.
-   * Must be called before queries on wallet-scoped client.
-   */
-  async setWalletSessionVariable(client: SupabaseClient, walletAddress: string): Promise<void> {
-    await client.rpc('set_app_current_wallet', { wallet: walletAddress });
-  }
 }

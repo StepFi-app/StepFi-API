@@ -2,11 +2,12 @@
 -- This migration adds RLS policies to ensure users can only access their own data
 -- Service role bypasses RLS automatically for admin operations
 --
--- This app uses wallet-based authentication. The API layer sets a Postgres session
--- variable 'app.current_wallet' before making queries. RLS policies check this variable.
---
--- To use: SET LOCAL app.current_wallet = 'G...'; before queries
--- Service role client bypasses RLS entirely for admin/indexer operations
+-- IMPORTANT: These policies require the API layer to execute
+-- SET LOCAL app.current_wallet = 'G...' before each query using a
+-- non-service-role client. The current API uses service-role client which
+-- bypasses RLS entirely. To enable RLS enforcement, the API layer must:
+-- 1. Use anon-key client (non-service-role) for user-facing queries
+-- 2. Execute SET LOCAL app.current_wallet = $wallet via raw SQL before queries
 
 -- ============================================================================
 -- Enable RLS on tables (ensure it's enabled)
@@ -17,15 +18,16 @@ ALTER TABLE public.vendors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sponsor_pools ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================================
--- RPC function to set wallet session variable for RLS
+-- RPC function to set session variable for RLS
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.set_app_current_wallet(wallet TEXT)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 BEGIN
-  PERFORM set_config('app.current_wallet', wallet, true);
+  PERFORM set_config('app.current_wallet', wallet, false);
 END;
 $$;
 
@@ -134,8 +136,8 @@ ON public.sponsor_pools
 -- Notes
 -- ============================================================================
 -- 1. Service role bypasses RLS automatically for all operations
--- 2. Non-service-role clients must call set_app_current_wallet(wallet) RPC before queries
---    to set the app.current_wallet session variable for RLS enforcement
+-- 2. Non-service-role clients must execute SET LOCAL app.current_wallet = 'G...'
+--    via raw SQL before each query for RLS enforcement
 -- 3. No blanket-permissive policies (WITH CHECK (true)) - service role bypasses RLS
 -- 4. repayment_installments table does not exist - payment_index is used instead
 --    (payment_index is an indexer table managed by service role)
