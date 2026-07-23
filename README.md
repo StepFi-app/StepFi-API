@@ -165,6 +165,8 @@ The bootstrap command will guide you through the process of setting up a Supabas
 | **Swagger Docs** | https://stepfi-api.onrender.com/api/v1/docs |
 | **Health Check** | https://stepfi-api.onrender.com/api/v1/health |
 
+> **Note**: A GitHub Action workflow pings the Health Check URL every 6 hours to keep the Render free tier instance warm and acts as a heartbeat monitor. If the ping fails (non-200 response), it automatically creates or updates a GitHub issue with the `incident` label to alert maintainers.
+
 ## 🛠️ Error tracking
 
 Error tracking is powered by Sentry. To enable error tracking in development or production:

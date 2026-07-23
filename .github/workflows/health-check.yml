@@ -1,0 +1,55 @@
+name: Health Check
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  ping-health:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Ping Health Endpoint
+        id: ping
+        run: |
+          status=$(curl -sf -o /dev/null -w "%{http_code}" https://stepfi-api.onrender.com/api/v1/health || echo "failed")
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Handle Failure
+        if: steps.ping.outputs.status != '200'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ steps.ping.outputs.status }}';
+            const timestamp = new Date().toISOString();
+            const issueTitle = `Health check failed at ${timestamp}`;
+            const issueBody = `The health check endpoint returned HTTP status ${status}.`;
+            const label = 'incident';
+            
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: label
+            });
+            
+            if (issues.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issues[0].number,
+                body: `Health check failed again at ${timestamp} with HTTP status ${status}.`
+              });
+              console.log(`Commented on existing incident issue #${issues[0].number}`);
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: issueTitle,
+                body: issueBody,
+                labels: [label]
+              });
+              console.log('Created new incident issue');
+            }
