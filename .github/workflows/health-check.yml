@@ -14,7 +14,7 @@ jobs:
       - name: Ping Health Endpoint
         id: ping
         run: |
-          status=$(curl -sf -o /dev/null -w "%{http_code}" https://stepfi-api.onrender.com/api/v1/health || echo "failed")
+          status=$(curl -s -o /dev/null -w "%{http_code}" https://stepfi-api.onrender.com/api/v1/health || echo "000")
           echo "status=$status" >> "$GITHUB_OUTPUT"
 
       - name: Handle Failure
