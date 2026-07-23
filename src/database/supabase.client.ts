@@ -51,4 +51,36 @@ export class SupabaseService {
   getServiceRoleClient(): SupabaseClient {
     return this.serviceRoleClient;
   }
+
+  /**
+   * Creates a wallet-scoped client for RLS enforcement.
+   * Uses anon key (non-service-role) which respects RLS policies.
+   * 
+   * IMPORTANT: Before using this client, the caller must execute:
+   * SET LOCAL app.current_wallet = 'G...' via raw SQL
+   * This can be done using client.rpc() with a custom function or
+   * by wrapping queries in a transaction that sets the variable.
+   * 
+   * Example usage:
+   * const client = this.getWalletScopedClient();
+   * await client.rpc('set_app_current_wallet', { wallet: walletAddress });
+   * // Now queries respect RLS
+   */
+  getWalletScopedClient(): SupabaseClient {
+    return createClient(
+      this.configService.get<string>('SUPABASE_URL'),
+      this.configService.get<string>('SUPABASE_ANON_KEY'),
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+        realtime: {
+          transport: ws as unknown as typeof WebSocket,
+        },
+      },
+    );
+  }
+
 }
