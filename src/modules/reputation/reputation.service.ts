@@ -4,11 +4,12 @@ import { Cache } from 'cache-manager';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../../database/supabase.client';
 import { ReputationContractClient } from '../../stellar/contracts/clients/reputation.client';
+import { CREDIT_TIERS } from '../credit-scoring/credit-scoring.service';
 
 export interface Reputation {
     wallet: string;
     score: number;
-    tier: 'gold' | 'silver' | 'bronze' | 'poor';
+    tier: 'gold' | 'silver' | 'bronze' | 'starter';
     interestRate: number;
     maxCredit: number;
     lastUpdated: string;
@@ -94,29 +95,17 @@ export class ReputationService implements OnModuleInit {
     }
 
     private mapToReputation(wallet: string, score: number, lastUpdated: string): Reputation {
-        let tier: 'gold' | 'silver' | 'bronze' | 'poor';
-        let interestRate: number;
-        let maxCredit: number;
+        const normalizedScore = Math.max(0, Math.min(100, score));
+        const matchedTier = CREDIT_TIERS.find((t) => normalizedScore >= t.minScore) ?? CREDIT_TIERS[CREDIT_TIERS.length - 1];
 
-        if (score >= 90) {
-            tier = 'gold';
-            interestRate = 5;
-            maxCredit = 5000;
-        } else if (score >= 75) {
-            tier = 'silver';
-            interestRate = 8;
-            maxCredit = 3000;
-        } else if (score >= 60) {
-            tier = 'bronze';
-            interestRate = 9;
-            maxCredit = 1500;
-        } else {
-            tier = 'poor';
-            interestRate = 12;
-            maxCredit = 500;
-        }
-
-        return { wallet, score, tier, interestRate, maxCredit, lastUpdated };
+        return {
+            wallet,
+            score,
+            tier: matchedTier.tier,
+            interestRate: matchedTier.interestRate,
+            maxCredit: matchedTier.maxCredit,
+            lastUpdated,
+        };
     }
 
     async invalidateReputation(wallet: string): Promise<void> {

@@ -227,7 +227,7 @@ describe('LoansController (e2e)', () => {
       jest.spyOn(app.get(ReputationService), 'getReputationScore').mockResolvedValue({
         wallet: validWallet,
         score: 40,
-        tier: 'poor',
+        tier: 'starter',
         interestRate: 12,
         maxCredit: 500,
         lastUpdated: '2026-03-23T00:00:00.000Z',

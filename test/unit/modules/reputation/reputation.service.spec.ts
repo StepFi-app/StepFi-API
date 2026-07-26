@@ -70,8 +70,8 @@ describe('ReputationService', () => {
                 wallet,
                 score: 95,
                 tier: 'gold',
-                interestRate: 5,
-                maxCredit: 5000,
+                interestRate: 4,
+                maxCredit: 10_000,
                 lastUpdated: new Date().toISOString(),
             };
             mockCacheManager.get.mockResolvedValue(mockReputation);
@@ -150,23 +150,23 @@ describe('ReputationService', () => {
 
             const gold = service['mapToReputation'](wallet, 90, now);
             expect(gold.tier).toBe('gold');
-            expect(gold.interestRate).toBe(5);
-            expect(gold.maxCredit).toBe(5000);
+            expect(gold.interestRate).toBe(4);
+            expect(gold.maxCredit).toBe(10_000);
 
             const silver = service['mapToReputation'](wallet, 75, now);
             expect(silver.tier).toBe('silver');
-            expect(silver.interestRate).toBe(8);
-            expect(silver.maxCredit).toBe(3000);
+            expect(silver.interestRate).toBe(6);
+            expect(silver.maxCredit).toBe(5_000);
 
             const bronze = service['mapToReputation'](wallet, 60, now);
             expect(bronze.tier).toBe('bronze');
-            expect(bronze.interestRate).toBe(9);
-            expect(bronze.maxCredit).toBe(1500);
+            expect(bronze.interestRate).toBe(8);
+            expect(bronze.maxCredit).toBe(2_500);
 
-            const poor = service['mapToReputation'](wallet, 59, now);
-            expect(poor.tier).toBe('poor');
-            expect(poor.interestRate).toBe(12);
-            expect(poor.maxCredit).toBe(500);
+            const starter = service['mapToReputation'](wallet, 59, now);
+            expect(starter.tier).toBe('starter');
+            expect(starter.interestRate).toBe(10);
+            expect(starter.maxCredit).toBe(1_000);
         });
 
         it('should fall back to blockchain when Redis cache is unavailable', async () => {
@@ -181,7 +181,7 @@ describe('ReputationService', () => {
 
             expect(scoreSpy).toHaveBeenCalled();
             expect(result.score).toBe(33);
-            expect(result.tier).toBe('poor');
+            expect(result.tier).toBe('starter');
         });
 
         it('should return default reputation when Supabase cache throws an error', async () => {
@@ -191,7 +191,7 @@ describe('ReputationService', () => {
             const result = await service.getReputationScore(wallet);
 
             expect(result.score).toBe(0);
-            expect(result.tier).toBe('poor');
+            expect(result.tier).toBe('starter');
         });
     });
 

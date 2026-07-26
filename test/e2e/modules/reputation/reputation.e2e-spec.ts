@@ -92,7 +92,7 @@ describe('ReputationController (e2e)', () => {
       const body = JSON.parse(res.payload);
       expect(body.success).toBe(true);
       expect(body.data.score).toBe(50);
-      expect(body.data.tier).toBe('poor');
+      expect(body.data.tier).toBe('starter');
     }, 10000);
 
     it('should return 400 for an invalid wallet address', async () => {

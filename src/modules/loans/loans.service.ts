@@ -340,7 +340,7 @@ export class LoansService {
       });
     }
 
-    const { maxCredit, tier } = this.mapScoreToCreditTier(reputationScore);
+    const { tier, maxCredit } = this.creditScoringService.resolveTier(reputationScore);
 
     const client = this.supabaseService.getServiceRoleClient();
     const { data: activeLoans, error } = await client
@@ -669,24 +669,5 @@ export class LoansService {
     };
 
     return this.creditScoringService.assess(params);
-  }
-
-  private mapScoreToCreditTier(score: number): {
-    tier: ReputationTier;
-    maxCredit: number;
-  } {
-    if (score >= 90) {
-      return { tier: 'gold', maxCredit: 5000 };
-    }
-
-    if (score >= 75) {
-      return { tier: 'silver', maxCredit: 3000 };
-    }
-
-    if (score >= 60) {
-      return { tier: 'bronze', maxCredit: 1500 };
-    }
-
-    return { tier: 'poor', maxCredit: 500 };
   }
 }

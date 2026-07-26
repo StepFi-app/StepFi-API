@@ -16,7 +16,7 @@ export class AvailableCreditResponseDto {
   @ApiProperty({
     description: 'Reputation tier derived from the on-chain score',
     example: 'silver',
-    enum: ['gold', 'silver', 'bronze', 'poor'],
+    enum: ['gold', 'silver', 'bronze', 'starter'],
   })
   reputationTier: ReputationTier;
 

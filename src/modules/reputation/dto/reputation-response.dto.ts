@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 /** Reputation tier based on on-chain score */
-export type ReputationTier = 'gold' | 'silver' | 'bronze' | 'poor';
+export type ReputationTier = 'gold' | 'silver' | 'bronze' | 'starter';
 
 /**
  * DTO for the reputation score response.
@@ -24,9 +24,9 @@ export class ReputationResponseDto {
   score: number;
 
   @ApiProperty({
-    description: 'Reputation tier derived from score (gold, silver, bronze, poor)',
+    description: 'Reputation tier derived from score (gold, silver, bronze, starter)',
     example: 'silver',
-    enum: ['gold', 'silver', 'bronze', 'poor'],
+    enum: ['gold', 'silver', 'bronze', 'starter'],
   })
   tier: ReputationTier;
 
