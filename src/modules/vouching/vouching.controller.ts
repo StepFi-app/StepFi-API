@@ -20,6 +20,7 @@ import {
 import { VouchingService } from './vouching.service';
 import {
   ApproveVouchDto,
+  DeclineVouchDto,
   RequestVouchDto,
   VouchResponseDto,
   VouchRequestItemDto,
@@ -59,6 +60,20 @@ export class VouchingController {
     @Body() dto: ApproveVouchDto,
   ): Promise<VouchResponseDto> {
     return this.vouchingService.approveVouch(user.wallet, dto);
+  }
+
+  @Post('decline')
+  @UseGuards(RolesGuard)
+  @Roles('mentor')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Mentor declines a pending vouch request' })
+  @ApiResponse({ status: 200, description: 'Vouch declined', type: VouchResponseDto })
+  @ApiResponse({ status: 404, description: 'No pending vouch found' })
+  async declineVouch(
+    @CurrentUser() user: { wallet: string },
+    @Body() dto: DeclineVouchDto,
+  ): Promise<VouchResponseDto> {
+    return this.vouchingService.declineVouch(user.wallet, dto);
   }
 
   @Get('mine')

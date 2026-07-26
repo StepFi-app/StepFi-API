@@ -6,6 +6,7 @@ export enum VouchStatus {
   APPROVED = 'approved',
   REVOKED = 'revoked',
   EXPIRED = 'expired',
+  DECLINED = 'declined',
 }
 
 const STELLAR_ADDRESS_REGEX = /^G[A-Z2-7]{55}$/;
@@ -27,6 +28,17 @@ export class RequestVouchDto {
 }
 
 export class ApproveVouchDto {
+  @ApiProperty({
+    example: 'GLEARNER1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890AB',
+    description: 'Learner Stellar wallet address (G... 56 chars)',
+  })
+  @IsString()
+  @Length(56, 56)
+  @Matches(STELLAR_ADDRESS_REGEX, { message: 'learnerWallet must be a valid Stellar address (G...)' })
+  learnerWallet: string;
+}
+
+export class DeclineVouchDto {
   @ApiProperty({
     example: 'GLEARNER1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890AB',
     description: 'Learner Stellar wallet address (G... 56 chars)',

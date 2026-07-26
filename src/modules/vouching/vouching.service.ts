@@ -8,6 +8,7 @@ import {
 import { SupabaseService } from '../../database/supabase.client';
 import {
   ApproveVouchDto,
+  DeclineVouchDto,
   RequestVouchDto,
   VouchResponseDto,
   VouchRequestItemDto,
@@ -130,6 +131,55 @@ export class VouchingService {
 
     this.logger.log(
       `Vouch approved: id=${pendingRow.id} mentor=${mentorWallet} learner=${dto.learnerWallet}`,
+    );
+    return this.mapToDto(data as VouchRow);
+  }
+
+  async declineVouch(
+    mentorWallet: string,
+    dto: DeclineVouchDto,
+  ): Promise<VouchResponseDto> {
+    const client = this.supabaseService.getServiceRoleClient();
+
+    const { data: pending, error: findError } = await client
+      .from('vouches')
+      .select('*')
+      .eq('mentor_wallet', mentorWallet)
+      .eq('learner_wallet', dto.learnerWallet)
+      .eq('status', VouchStatus.PENDING)
+      .maybeSingle();
+
+    if (findError) {
+      this.logger.error(`Failed to find pending vouch: ${findError.message}`);
+      throw new Error('Failed to find pending vouch.');
+    }
+
+    if (!pending) {
+      throw new NotFoundException({
+        code: 'VOUCH_NOT_FOUND',
+        message: 'No pending vouch request found for this learner.',
+      });
+    }
+
+    const pendingRow = pending as VouchRow;
+
+    const { data, error } = await client
+      .from('vouches')
+      .update({
+        status: VouchStatus.DECLINED,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', pendingRow.id)
+      .select()
+      .single();
+
+    if (error || !data) {
+      this.logger.error(`Failed to decline vouch ${pendingRow.id}: ${error?.message}`);
+      throw new Error('Failed to decline vouch.');
+    }
+
+    this.logger.log(
+      `Vouch declined: id=${pendingRow.id} mentor=${mentorWallet} learner=${dto.learnerWallet}`,
     );
     return this.mapToDto(data as VouchRow);
   }

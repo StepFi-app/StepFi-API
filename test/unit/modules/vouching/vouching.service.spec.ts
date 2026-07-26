@@ -82,4 +82,30 @@ describe('VouchingService', () => {
       await expect(service.revokeVouch(otherMentor, vouchId)).rejects.toThrow(ForbiddenException);
     });
   });
+
+  describe('declineVouch', () => {
+    const learnerWallet = 'GLEARNER89ABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLM';
+    const pendingRow = { ...vouchRow, status: VouchStatus.PENDING };
+
+    it('declines a pending vouch request for the mentor', async () => {
+      mockSupabaseClient.from
+        .mockReturnValueOnce(chain({ data: pendingRow, error: null })) // pending lookup
+        .mockReturnValueOnce(
+          chain({ data: { ...pendingRow, status: VouchStatus.DECLINED }, error: null }),
+        );
+
+      const result = await service.declineVouch(mentorWallet, { learnerWallet });
+
+      expect(result.status).toBe(VouchStatus.DECLINED);
+      expect(result.id).toBe(vouchId);
+    });
+
+    it('throws NotFoundException when there is no pending vouch for this learner', async () => {
+      mockSupabaseClient.from.mockReturnValueOnce(chain({ data: null, error: null }));
+
+      await expect(
+        service.declineVouch(mentorWallet, { learnerWallet }),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
 });
