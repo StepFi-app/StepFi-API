@@ -1,4 +1,4 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, OnModuleInit } from '@nestjs/common';
 import { APP_GUARD, APP_FILTER } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -29,6 +29,7 @@ import { CreditScoringModule } from './modules/credit-scoring/credit-scoring.mod
 import { AdminModule } from './modules/admin/admin.module';
 import { CorrelationIdMiddleware } from './common/logger/correlation-id.middleware';
 import { StateReconciliationModule } from './jobs/state-reconciliation/state-reconciliation.module';
+import { validateAdminWallets } from './config/env';
 
 @Module({
   imports: [
@@ -78,7 +79,11 @@ import { StateReconciliationModule } from './jobs/state-reconciliation/state-rec
     },
   ],
 })
-export class AppModule implements NestModule {
+export class AppModule implements NestModule, OnModuleInit {
+  onModuleInit(): void {
+    validateAdminWallets();
+  }
+
   configure(consumer: MiddlewareConsumer): void {
     consumer.apply(CorrelationIdMiddleware).forRoutes('*');
   }

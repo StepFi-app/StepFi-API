@@ -4,12 +4,13 @@ import { AuditService } from './audit.service';
 import { AuditLogQueryDto } from './dto/audit-log-query.dto';
 import { AuditLogListResponseDto } from './dto/audit-log-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { AdminGuard } from '../../auth/guards/admin.guard';
 import { AuditInterceptor } from '../../common/interceptors/audit.interceptor';
 import { AuditAction } from '../../common/decorators/audit-action.decorator';
 
 @ApiTags('admin')
 @Controller('admin')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, AdminGuard)
 @ApiBearerAuth()
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
