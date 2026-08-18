@@ -1,16 +1,21 @@
-<<<<<<< Updated upstream
 import {
-  ConflictException,
-  ForbiddenException,
   Injectable,
-  InternalServerErrorException,
   Logger,
   NotFoundException,
+  ConflictException,
+  ForbiddenException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
 import { SupabaseService } from '../../database/supabase.client';
 import { VendorsRepository, VendorDetailRecord } from '../../database/repositories/vendors.repository';
-import { VendorResponseDto, VendorType } from './dto/vendor.dto';
+import { VendorRegistryContractClient } from '../../stellar/contracts/clients/vendor-registry.client';
+import {
+  VendorResponseDto,
+  VendorType,
+  VendorStatus,
+  VendorActionResponseDto,
+} from './dto/vendor.dto';
 import { RegisterVendorDto } from './dto/register-vendor.dto';
 import { VendorDashboardDto } from './dto/vendor-dashboard.dto';
 import { VendorLoanDto, VendorLoansPageDto } from './dto/vendor-loan.dto';
@@ -63,12 +68,6 @@ interface VendorProductRow {
 }
 
 const API_KEY_PREFIX = 'sfi_';
-=======
-import { Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common';
-import { SupabaseService } from '../../database/supabase.client';
-import { VendorRegistryContractClient } from '../../stellar/contracts/clients/vendor-registry.client';
-import { VendorResponseDto, VendorType, VendorStatus, VendorActionResponseDto } from './dto/vendor.dto';
->>>>>>> Stashed changes
 
 interface VendorRow {
   id: string;
@@ -104,11 +103,8 @@ export class VendorsService {
 
   constructor(
     private readonly supabaseService: SupabaseService,
-<<<<<<< Updated upstream
     private readonly vendorsRepository: VendorsRepository,
-=======
     private readonly vendorRegistryClient: VendorRegistryContractClient,
->>>>>>> Stashed changes
   ) {}
 
   async getAll(type?: VendorType): Promise<VendorResponseDto[]> {

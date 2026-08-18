@@ -2,7 +2,6 @@ import {
   Controller,
   Get,
   Post,
-<<<<<<< Updated upstream
   Patch,
   Delete,
   Param,
@@ -14,14 +13,6 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
-=======
-  Param,
-  Query,
-  HttpCode,
-  HttpStatus,
-  UseGuards,
-  ParseUUIDPipe,
->>>>>>> Stashed changes
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -31,12 +22,13 @@ import {
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-<<<<<<< Updated upstream
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { AdminGuard } from '../../common/guards/admin.guard';
 import { Roles, RolesGuard } from '../../auth/guards/roles.guard';
+import { AuditAction } from '../../common/decorators/audit-action.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { VendorsService } from './vendors.service';
-import { VendorResponseDto, VendorType } from './dto/vendor.dto';
+import { VendorResponseDto, VendorType, VendorActionResponseDto } from './dto/vendor.dto';
 import { RegisterVendorDto } from './dto/register-vendor.dto';
 import { VendorDashboardDto } from './dto/vendor-dashboard.dto';
 import { VendorLoansPageDto } from './dto/vendor-loan.dto';
@@ -49,20 +41,11 @@ import {
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
 import { ApiKeyResponseDto, ApiKeyCreatedResponseDto } from './dto/api-key-response.dto';
 
-/** Standard response envelope: { success, data, message }. */
 interface Envelope<T> {
   success: boolean;
   data: T;
   message: string;
 }
-=======
-import { VendorsService } from './vendors.service';
-import { VendorResponseDto, VendorType, VendorActionResponseDto } from './dto/vendor.dto';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { AdminGuard } from '../../common/guards/admin.guard';
-import { AuditAction } from '../../common/decorators/audit-action.decorator';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
->>>>>>> Stashed changes
 
 @ApiTags('vendors')
 @Controller('vendors')
