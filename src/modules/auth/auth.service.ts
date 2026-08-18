@@ -154,7 +154,21 @@ export class AuthService {
     if (user.status === 'blocked') {
       throw new UnauthorizedException({ code: 'AUTH_USER_BLOCKED', message: 'This account has been suspended.' });
     }
+<<<<<<< Updated upstream
     return { id: user.id, role: user.role ?? null };
+=======
+    const { data: profile } = await client
+      .from('learner_profiles')
+      .select('id')
+      .eq('wallet_address', wallet)
+      .maybeSingle();
+    if (!profile) {
+      await client.from('learner_profiles').insert({
+        wallet_address: wallet,
+      });
+    }
+    return user.id;
+>>>>>>> Stashed changes
   }
 
   async generateTokens(wallet: string): Promise<AuthResponseDto> {

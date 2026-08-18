@@ -51,6 +51,16 @@ describe('HealthService', () => {
 
     service = module.get<HealthService>(HealthService);
     supabaseService = module.get<SupabaseService>(SupabaseService);
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        horizon_version: '2.0.0',
+        network: 'Test SDF Network ; September 2015',
+        core_version: '20.0.0',
+        history_latest_ledger: 1000,
+      }),
+    });
   });
 
   afterEach(() => {

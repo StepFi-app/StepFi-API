@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+<<<<<<< Updated upstream
   Patch,
   Delete,
   Param,
@@ -13,6 +14,14 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+=======
+  Param,
+  Query,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+  ParseUUIDPipe,
+>>>>>>> Stashed changes
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -22,6 +31,7 @@ import {
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+<<<<<<< Updated upstream
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles, RolesGuard } from '../../auth/guards/roles.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -45,6 +55,14 @@ interface Envelope<T> {
   data: T;
   message: string;
 }
+=======
+import { VendorsService } from './vendors.service';
+import { VendorResponseDto, VendorType, VendorActionResponseDto } from './dto/vendor.dto';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { AdminGuard } from '../../common/guards/admin.guard';
+import { AuditAction } from '../../common/decorators/audit-action.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+>>>>>>> Stashed changes
 
 @ApiTags('vendors')
 @Controller('vendors')
@@ -273,4 +291,67 @@ export class VendorsController {
   async getById(@Param('id') id: string): Promise<VendorResponseDto> {
     return this.vendorsService.getById(id);
   }
+
+  @Post(':id/approve')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiBearerAuth()
+  @AuditAction('vendor.approve')
+  @ApiOperation({
+    summary: 'Approve a vendor',
+    description:
+      'Constructs an unsigned Soroban approve_vendor() XDR transaction for an allowlisted admin wallet to sign and submit. Vendor must currently be in pending status.',
+  })
+  @ApiParam({ name: 'id', description: 'Vendor UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Unsigned transaction XDR generated successfully',
+    type: VendorActionResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized - missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Forbidden - wallet is not an allowlisted admin' })
+  @ApiResponse({ status: 409, description: 'Conflict - vendor is not in pending status' })
+  async approveVendor(
+    @CurrentUser() user: { wallet: string },
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<{ success: boolean; data: VendorActionResponseDto; message: string }> {
+    const data = await this.vendorsService.approveVendor(user.wallet, id);
+    return {
+      success: true,
+      data,
+      message: 'Vendor approval transaction constructed successfully',
+    };
+  }
+
+  @Post(':id/suspend')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiBearerAuth()
+  @AuditAction('vendor.suspend')
+  @ApiOperation({
+    summary: 'Suspend a vendor',
+    description:
+      'Constructs an unsigned Soroban suspend_vendor() XDR transaction for an allowlisted admin wallet to sign and submit. Vendor must currently be in approved status.',
+  })
+  @ApiParam({ name: 'id', description: 'Vendor UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Unsigned transaction XDR generated successfully',
+    type: VendorActionResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized - missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Forbidden - wallet is not an allowlisted admin' })
+  @ApiResponse({ status: 409, description: 'Conflict - vendor is not in approved status' })
+  async suspendVendor(
+    @CurrentUser() user: { wallet: string },
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<{ success: boolean; data: VendorActionResponseDto; message: string }> {
+    const data = await this.vendorsService.suspendVendor(user.wallet, id);
+    return {
+      success: true,
+      data,
+      message: 'Vendor suspension transaction constructed successfully',
+    };
+  }
 }
+

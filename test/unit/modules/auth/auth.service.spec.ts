@@ -60,7 +60,33 @@ describe('AuthService', () => {
     mockInsert.mockResolvedValue({ error: null });
     mockJwtService.sign.mockReturnValue('mock.jwt.token');
     mockConfigService.get.mockReturnValue('mock-secret');
-    mockFrom.mockReturnValue({ insert: mockInsert });
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'users') {
+        const chain: Record<string, jest.Mock> = {
+          upsert: jest.fn(),
+          select: jest.fn(),
+          single: jest.fn().mockResolvedValue({ data: { id: 'user-uuid', status: 'active' }, error: null }),
+        };
+        chain.upsert.mockReturnValue(chain);
+        chain.select.mockReturnValue(chain);
+        return chain;
+      }
+      if (table === 'learner_profiles') {
+        const chain: Record<string, jest.Mock> = {
+          select: jest.fn(),
+          eq: jest.fn(),
+          maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+          insert: jest.fn().mockResolvedValue({ error: null }),
+        };
+        chain.select.mockReturnValue(chain);
+        chain.eq.mockReturnValue(chain);
+        return chain;
+      }
+      if (table === 'sessions') {
+        return { insert: jest.fn().mockResolvedValue({ error: null }) };
+      }
+      return { insert: mockInsert };
+    });
     (StrKey.isValidEd25519PublicKey as jest.Mock).mockReturnValue(true);
   });
 
@@ -287,6 +313,17 @@ describe('AuthService', () => {
           chain.select.mockReturnValue(chain);
           return chain;
         }
+        if (table === 'learner_profiles') {
+          const chain: Record<string, jest.Mock> = {
+            select: jest.fn(),
+            eq: jest.fn(),
+            maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+            insert: jest.fn().mockResolvedValue({ error: null }),
+          };
+          chain.select.mockReturnValue(chain);
+          chain.eq.mockReturnValue(chain);
+          return chain;
+        }
         if (table === 'sessions') {
           return { insert: jest.fn().mockResolvedValue(sessionResult) };
         }
@@ -385,6 +422,17 @@ describe('AuthService', () => {
           };
           chain.upsert.mockReturnValue(chain);
           chain.select.mockReturnValue(chain);
+          return chain;
+        }
+        if (table === 'learner_profiles') {
+          const chain: Record<string, jest.Mock> = {
+            select: jest.fn(),
+            eq: jest.fn(),
+            maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+            insert: jest.fn().mockResolvedValue({ error: null }),
+          };
+          chain.select.mockReturnValue(chain);
+          chain.eq.mockReturnValue(chain);
           return chain;
         }
         if (table === 'sessions') {

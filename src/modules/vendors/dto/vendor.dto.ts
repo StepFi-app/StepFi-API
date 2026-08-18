@@ -9,6 +9,13 @@ export enum VendorType {
   SUBSCRIPTIONS = 'subscriptions',
 }
 
+export enum VendorStatus {
+  PENDING = 'pending',
+  APPROVED = 'approved',
+  SUSPENDED = 'suspended',
+  REJECTED = 'rejected',
+}
+
 export class CreateVendorDto {
   @ApiProperty({ example: 'University of Lagos' })
   @IsString()
@@ -39,6 +46,7 @@ export class VendorResponseDto {
   @ApiProperty() walletAddress: string;
   @ApiProperty() name: string;
   @ApiProperty({ enum: VendorType }) type: VendorType;
+  @ApiProperty({ enum: VendorStatus }) status: VendorStatus;
   @ApiProperty() verified: boolean;
   @ApiPropertyOptional() website?: string;
   @ApiPropertyOptional() country?: string;
@@ -46,3 +54,18 @@ export class VendorResponseDto {
   @ApiPropertyOptional() description?: string;
   @ApiProperty() createdAt: string;
 }
+
+export class VendorActionResponseDto {
+  @ApiProperty({ description: 'Unsigned Soroban XDR transaction string to sign' })
+  unsignedXdr: string;
+
+  @ApiProperty({ description: 'Human-readable action description' })
+  description: string;
+
+  @ApiProperty({ description: 'Target vendor UUID' })
+  vendorId: string;
+
+  @ApiProperty({ enum: VendorStatus, description: 'Current vendor status before on-chain confirmation' })
+  status: VendorStatus;
+}
+

@@ -1,6 +1,12 @@
+<<<<<<< Updated upstream
 import { MiddlewareConsumer, Module, NestModule, OnModuleInit } from '@nestjs/common';
 import { APP_GUARD, APP_FILTER } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+=======
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+>>>>>>> Stashed changes
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { SentryModule, SentryGlobalFilter } from '@sentry/nestjs/setup';
@@ -28,8 +34,12 @@ import { MetricsModule } from './modules/metrics/metrics.module';
 import { CreditScoringModule } from './modules/credit-scoring/credit-scoring.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { CorrelationIdMiddleware } from './common/logger/correlation-id.middleware';
+<<<<<<< Updated upstream
 import { StateReconciliationModule } from './jobs/state-reconciliation/state-reconciliation.module';
 import { validateAdminWallets } from './config/env';
+=======
+import { AuditInterceptor } from './common/interceptors/audit.interceptor';
+>>>>>>> Stashed changes
 
 @Module({
   imports: [
@@ -74,8 +84,13 @@ import { validateAdminWallets } from './config/env';
       useClass: ThrottlerGuard,
     },
     {
+<<<<<<< Updated upstream
       provide: APP_FILTER,
       useClass: SentryGlobalFilter,
+=======
+      provide: APP_INTERCEPTOR,
+      useClass: AuditInterceptor,
+>>>>>>> Stashed changes
     },
   ],
 })

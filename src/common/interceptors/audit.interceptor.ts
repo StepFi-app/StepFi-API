@@ -3,6 +3,7 @@ import {
   NestInterceptor,
   ExecutionContext,
   CallHandler,
+<<<<<<< Updated upstream
 } from '@nestjs/common';
 import { FastifyRequest } from 'fastify';
 import { Observable } from 'rxjs';
@@ -68,6 +69,55 @@ export class AuditInterceptor implements NestInterceptor {
           .catch((err: Error) => {
             console.error('Failed to persist audit log:', err);
           });
+=======
+  Logger,
+} from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { Observable } from 'rxjs';
+import { tap } from 'rxjs/operators';
+import { AUDIT_ACTION_KEY } from '../decorators/audit-action.decorator';
+
+/**
+ * Audit log interceptor.
+ *
+ * Inspects execution context for @AuditAction metadata. If present, logs the
+ * privileged action attempt and execution outcome alongside acting wallet and route params.
+ */
+@Injectable()
+export class AuditInterceptor implements NestInterceptor {
+  private readonly logger = new Logger(AuditInterceptor.name);
+
+  constructor(private readonly reflector: Reflector) {}
+
+  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+    const action = this.reflector.get<string>(AUDIT_ACTION_KEY, context.getHandler());
+
+    if (!action) {
+      return next.handle();
+    }
+
+    const request = context.switchToHttp().getRequest();
+    const userWallet = request.user?.wallet ?? 'anonymous';
+    const params = request.params;
+
+    this.logger.log({
+      event: 'AUDIT_ACTION_INITIATED',
+      action,
+      actor: userWallet,
+      params,
+      timestamp: new Date().toISOString(),
+    });
+
+    return next.handle().pipe(
+      tap(() => {
+        this.logger.log({
+          event: 'AUDIT_ACTION_SUCCESS',
+          action,
+          actor: userWallet,
+          targetId: params?.id,
+          timestamp: new Date().toISOString(),
+        });
+>>>>>>> Stashed changes
       }),
     );
   }
