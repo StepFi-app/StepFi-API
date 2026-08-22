@@ -245,8 +245,9 @@ export class LoansController {
   async submitRepayment(
     @Param('loanId', ParseUUIDPipe) loanId: string,
     @Body('xdr') signedXdr: string,
+    @Body('idempotencyKey') idempotencyKey?: string,
   ) {
-    const data = await this.blockchainService.submitRepayment(signedXdr);
+    const data = await this.blockchainService.submitRepayment(signedXdr, idempotencyKey);
     return { success: true, data, message: 'Repayment submitted and confirmed successfully' };
   }
 
