@@ -16,7 +16,7 @@ export interface UserPreferencesRecord {
     theme: string;
 }
 
-export type UserRole = 'sponsor' | 'vendor' | 'mentor';
+export type UserRole = 'sponsor' | 'vendor' | 'mentor' | 'admin';
 
 export interface UserRecord {
     id: string;

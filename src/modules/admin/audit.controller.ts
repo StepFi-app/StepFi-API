@@ -4,7 +4,7 @@ import { AuditService } from './audit.service';
 import { AuditLogQueryDto } from './dto/audit-log-query.dto';
 import { AuditLogListResponseDto } from './dto/audit-log-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { AdminGuard } from '../../auth/guards/admin.guard';
+import { AdminGuard } from './admin.guard';
 import { AuditInterceptor } from '../../common/interceptors/audit.interceptor';
 import { AuditAction } from '../../common/decorators/audit-action.decorator';
 
@@ -35,7 +35,8 @@ export class AuditController {
     description: 'Audit logs retrieved successfully',
     type: AuditLogListResponseDto,
   })
-  @ApiResponse({ status: 401, description: 'Unauthorized - missing or invalid admin JWT' })
+  @ApiResponse({ status: 401, description: 'Unauthorized - missing or invalid access token' })
+  @ApiResponse({ status: 403, description: 'Forbidden - admin access required' })
   async getAuditLogs(@Query() query: AuditLogQueryDto) {
     return this.auditService.findMany(query);
   }

@@ -32,10 +32,10 @@ export class UserProfileDto {
     @ApiProperty({
         example: 'sponsor',
         nullable: true,
-        enum: ['sponsor', 'vendor', 'mentor'],
+        enum: ['sponsor', 'vendor', 'mentor', 'admin'],
         description: 'Permanent role chosen once via PATCH /users/me/role, null until chosen',
     })
-    role: 'sponsor' | 'vendor' | 'mentor' | null;
+    role: 'sponsor' | 'vendor' | 'mentor' | 'admin' | null;
 
     @ApiProperty({ type: UserPreferencesDto })
     preferences: UserPreferencesDto;
