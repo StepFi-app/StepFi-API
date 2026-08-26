@@ -55,36 +55,42 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterRequestDto, profileImage?: UploadedAvatarFile): Promise<RegisterResponse> {
-    const existingWallet = await this.usersRepository.findByWallet(dto.walletAddress);
-    if (existingWallet) {
-      throw new ConflictException({ code: 'AUTH_WALLET_EXISTS', message: 'Wallet address is already registered.' });
-    }
-    const usernameTaken = await this.usersRepository.checkUsernameExists(dto.username);
-    if (usernameTaken) {
-      throw new ConflictException({ code: 'AUTH_USERNAME_TAKEN', message: 'Username is already taken.' });
-    }
     let avatarUrl: string | null = null;
-    if (profileImage) {
-      avatarUrl = await this.usersRepository.uploadAvatar(dto.walletAddress, profileImage);
+    let createdUserId: string | null = null;
+    try {
+      if (profileImage) {
+        avatarUrl = await this.usersRepository.uploadAvatar(dto.walletAddress, profileImage);
+      }
+      const user = await this.usersRepository.createProfile({
+        wallet: dto.walletAddress,
+        username: dto.username,
+        displayName: dto.displayName,
+        avatarUrl,
+      });
+      createdUserId = user.id;
+
+      const tokens = await this.generateTokens(dto.walletAddress);
+
+      return {
+        user: {
+          id: user.id,
+          walletAddress: user.wallet_address,
+          username: user.username,
+          displayName: user.display_name,
+          avatarUrl: user.avatar_url,
+          createdAt: user.created_at,
+        },
+        ...tokens,
+      };
+    } catch (error) {
+      if (avatarUrl) {
+        await this.usersRepository.deleteAvatar(avatarUrl).catch(() => {});
+      }
+      if (createdUserId) {
+        await this.usersRepository.deleteUserById(createdUserId).catch(() => {});
+      }
+      throw error;
     }
-    const user = await this.usersRepository.createProfile({
-      wallet: dto.walletAddress,
-      username: dto.username,
-      displayName: dto.displayName,
-      avatarUrl,
-    });
-    const tokens = await this.generateTokens(dto.walletAddress);
-    return {
-      user: {
-        id: user.id,
-        walletAddress: user.wallet_address,
-        username: user.username,
-        displayName: user.display_name,
-        avatarUrl: user.avatar_url,
-        createdAt: user.created_at,
-      },
-      ...tokens,
-    };
   }
 
   async generateNonce(wallet: string): Promise<NonceResponseDto> {

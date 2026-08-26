@@ -42,6 +42,8 @@ describe('AuthService', () => {
     checkUsernameExists: jest.fn(),
     uploadAvatar: jest.fn(),
     createProfile: jest.fn(),
+    deleteAvatar: jest.fn(),
+    deleteUserById: jest.fn(),
   };
 
   const mockAuditService = {
@@ -458,6 +460,8 @@ describe('AuthService', () => {
       mockUsersRepository.checkUsernameExists.mockResolvedValue(false);
       mockUsersRepository.createProfile.mockResolvedValue(mockUser);
       mockUsersRepository.uploadAvatar.mockResolvedValue('https://example.com/avatar.png');
+      mockUsersRepository.deleteAvatar.mockResolvedValue(undefined);
+      mockUsersRepository.deleteUserById.mockResolvedValue(undefined);
 
       // Mock findOrCreateUser internal behavior via Supabase mock
       mockFrom.mockImplementation((table: string) => {
@@ -492,8 +496,6 @@ describe('AuthService', () => {
     it('should register a new user successfully without image', async () => {
       const result = await service.register(registerDto);
 
-      expect(mockUsersRepository.findByWallet).toHaveBeenCalledWith(validWallet);
-      expect(mockUsersRepository.checkUsernameExists).toHaveBeenCalledWith('testuser');
       expect(mockUsersRepository.createProfile).toHaveBeenCalledWith({
         wallet: validWallet,
         username: 'testuser',
@@ -517,22 +519,138 @@ describe('AuthService', () => {
       expect(result.user.avatarUrl).toBe('https://example.com/avatar.png');
     });
 
-    it('should throw ConflictException if wallet already exists', async () => {
-      mockUsersRepository.findByWallet.mockResolvedValue({ id: 'existing' });
+    it('should throw ConflictException (AUTH_WALLET_EXISTS) if DB unique constraint on wallet is violated', async () => {
+      mockUsersRepository.createProfile.mockRejectedValueOnce(
+        new ConflictException({ code: 'AUTH_WALLET_EXISTS', message: 'Wallet address is already registered.' }),
+      );
 
-      await expect(service.register(registerDto)).rejects.toThrow(ConflictException);
       await expect(service.register(registerDto)).rejects.toMatchObject({
         response: { code: 'AUTH_WALLET_EXISTS' },
       });
     });
 
-    it('should throw ConflictException if username is taken', async () => {
-      mockUsersRepository.checkUsernameExists.mockResolvedValue(true);
+    it('should throw ConflictException (AUTH_USERNAME_TAKEN) if DB unique constraint on username is violated', async () => {
+      mockUsersRepository.createProfile.mockRejectedValueOnce(
+        new ConflictException({ code: 'AUTH_USERNAME_TAKEN', message: 'Username is already taken.' }),
+      );
 
-      await expect(service.register(registerDto)).rejects.toThrow(ConflictException);
       await expect(service.register(registerDto)).rejects.toMatchObject({
         response: { code: 'AUTH_USERNAME_TAKEN' },
       });
+    });
+
+    it('should handle parallel duplicate-wallet registrations yielding exactly one success and one 409 AUTH_WALLET_EXISTS', async () => {
+      mockUsersRepository.createProfile
+        .mockResolvedValueOnce(mockUser)
+        .mockRejectedValueOnce(
+          new ConflictException({ code: 'AUTH_WALLET_EXISTS', message: 'Wallet address is already registered.' }),
+        );
+
+      const [res1, res2] = await Promise.allSettled([
+        service.register(registerDto),
+        service.register(registerDto),
+      ]);
+
+      const fulfilled = [res1, res2].filter((r) => r.status === 'fulfilled');
+      const rejected = [res1, res2].filter((r) => r.status === 'rejected');
+
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      if (rejected[0].status === 'rejected') {
+        expect(rejected[0].reason).toBeInstanceOf(ConflictException);
+        expect((rejected[0].reason as ConflictException).getResponse()).toEqual({
+          code: 'AUTH_WALLET_EXISTS',
+          message: 'Wallet address is already registered.',
+        });
+      }
+    });
+
+    it('should handle parallel duplicate-username registrations yielding exactly one success and one 409 AUTH_USERNAME_TAKEN', async () => {
+      const dto2 = { ...registerDto, walletAddress: 'GDIFFERENTWALLETHDHSKDHFKSHDFKSHDFKSHDFKSHDFKSH' };
+
+      mockUsersRepository.createProfile
+        .mockResolvedValueOnce(mockUser)
+        .mockRejectedValueOnce(
+          new ConflictException({ code: 'AUTH_USERNAME_TAKEN', message: 'Username is already taken.' }),
+        );
+
+      const [res1, res2] = await Promise.allSettled([
+        service.register(registerDto),
+        service.register(dto2),
+      ]);
+
+      const fulfilled = [res1, res2].filter((r) => r.status === 'fulfilled');
+      const rejected = [res1, res2].filter((r) => r.status === 'rejected');
+
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      if (rejected[0].status === 'rejected') {
+        expect(rejected[0].reason).toBeInstanceOf(ConflictException);
+        expect((rejected[0].reason as ConflictException).getResponse()).toEqual({
+          code: 'AUTH_USERNAME_TAKEN',
+          message: 'Username is already taken.',
+        });
+      }
+    });
+
+    it('should return same structured 409 AUTH_WALLET_EXISTS on sequential re-registration', async () => {
+      // First registration succeeds
+      await service.register(registerDto);
+
+      // Second registration fails on unique constraint
+      mockUsersRepository.createProfile.mockRejectedValueOnce(
+        new ConflictException({ code: 'AUTH_WALLET_EXISTS', message: 'Wallet address is already registered.' }),
+      );
+
+      await expect(service.register(registerDto)).rejects.toMatchObject({
+        response: { code: 'AUTH_WALLET_EXISTS' },
+      });
+    });
+
+    it('should clean up avatar from storage when registration fails after avatar upload', async () => {
+      const mockFile = { originalname: 'avatar.png', buffer: Buffer.from('test'), mimetype: 'image/png' };
+      mockUsersRepository.uploadAvatar.mockResolvedValue('https://example.com/avatar.png');
+      mockUsersRepository.createProfile.mockRejectedValueOnce(
+        new ConflictException({ code: 'AUTH_WALLET_EXISTS', message: 'Wallet address is already registered.' }),
+      );
+
+      await expect(service.register(registerDto, mockFile)).rejects.toThrow(ConflictException);
+
+      expect(mockUsersRepository.deleteAvatar).toHaveBeenCalledWith('https://example.com/avatar.png');
+    });
+
+    it('should clean up both avatar and created user if downstream token issuance fails', async () => {
+      const mockFile = { originalname: 'avatar.png', buffer: Buffer.from('test'), mimetype: 'image/png' };
+      mockUsersRepository.uploadAvatar.mockResolvedValue('https://example.com/avatar.png');
+      mockUsersRepository.createProfile.mockResolvedValue(mockUser);
+
+      // Mock session creation failure during generateTokens
+      mockFrom.mockImplementation((table: string) => {
+        if (table === 'users') {
+          return {
+            upsert: jest.fn().mockReturnThis(),
+            select: jest.fn().mockReturnThis(),
+            single: jest.fn().mockResolvedValue({ data: { id: 'user-uuid', status: 'active' }, error: null }),
+          };
+        }
+        if (table === 'learner_profiles') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+            insert: jest.fn().mockResolvedValue({ error: null }),
+          };
+        }
+        if (table === 'sessions') {
+          return { insert: jest.fn().mockResolvedValue({ error: { message: 'Session failed' } }) };
+        }
+        return { insert: mockInsert };
+      });
+
+      await expect(service.register(registerDto, mockFile)).rejects.toThrow(InternalServerErrorException);
+
+      expect(mockUsersRepository.deleteAvatar).toHaveBeenCalledWith('https://example.com/avatar.png');
+      expect(mockUsersRepository.deleteUserById).toHaveBeenCalledWith('user-uuid');
     });
   });
 

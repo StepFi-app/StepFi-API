@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, ConflictException } from '@nestjs/common';
 import { SupabaseService } from '../supabase.client';
 import { UpdateUserDto } from '../../modules/users/dto/update-user.dto';
 
@@ -260,6 +260,19 @@ export class UsersRepository {
             .single();
 
         if (error) {
+            const combinedErr = `${error.code || ''} ${error.message || ''} ${error.details || ''} ${error.hint || ''}`;
+            if (error.code === '23505' || combinedErr.includes('duplicate key') || combinedErr.includes('unique constraint')) {
+                if (combinedErr.includes('username')) {
+                    throw new ConflictException({
+                        code: 'AUTH_USERNAME_TAKEN',
+                        message: 'Username is already taken.',
+                    });
+                }
+                throw new ConflictException({
+                    code: 'AUTH_WALLET_EXISTS',
+                    message: 'Wallet address is already registered.',
+                });
+            }
             throw new InternalServerErrorException({
                 code: 'DATABASE_INSERT_ERROR',
                 message: `Failed to create user profile: ${error.message}`,
@@ -292,4 +305,25 @@ export class UsersRepository {
         const { data } = client.storage.from('avatars').getPublicUrl(fileName);
         return data.publicUrl;
     }
+
+    async deleteAvatar(avatarUrl: string): Promise<void> {
+        try {
+            const fileName = avatarUrl.substring(avatarUrl.lastIndexOf('/') + 1);
+            if (!fileName) return;
+            const client = this.supabaseService.getServiceRoleClient();
+            await client.storage.from('avatars').remove([fileName]);
+        } catch {
+            // Ignore cleanup failures
+        }
+    }
+
+    async deleteUserById(id: string): Promise<void> {
+        try {
+            const client = this.supabaseService.getServiceRoleClient();
+            await client.from('users').delete().eq('id', id);
+        } catch {
+            // Ignore cleanup failures
+        }
+    }
 }
+
