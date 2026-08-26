@@ -6,7 +6,6 @@ pure chore/docs commits). Direct pushes to main must also be logged here.
 
 ---
 
-<<<<<<< Updated upstream
 ## 2026-08-24
 
 - **Session families + refresh-token replay detection** (`sessions.family_id`
@@ -27,7 +26,7 @@ pure chore/docs commits). Direct pushes to main must also be logged here.
 - Tests: refresh-family rotation, replay → family-wide revocation + audit
   event, blocked-user denial within TTL bound, cache expiry re-query,
   cleanup job deletes-only-expired.
-=======
+
 ## 2026-08-26
 
 - Fixed registration race conditions in `AuthService.register()` by eliminating application-side pre-checks (`findByWallet`, `checkUsernameExists`) and relying directly on DB-level UNIQUE constraints (`users.wallet_address`, `users.username`).
@@ -35,7 +34,6 @@ pure chore/docs commits). Direct pushes to main must also be logged here.
 - Updated `UsersRepository.createProfile()` to catch PostgreSQL unique constraint violation error `23505` and map to structured 409 `ConflictException` (`AUTH_WALLET_EXISTS`, `AUTH_USERNAME_TAKEN`).
 - Added cleanup handlers (`deleteAvatar`, `deleteUserById`) in `AuthService.register()` and `UsersRepository` to ensure failed registrations do not leave orphaned avatar files or partial user records.
 - Added unit tests covering DB unique constraint error mapping, parallel race conditions for duplicate wallet and username registrations, sequential re-registration compatibility, and avatar/user cleanup on failure.
->>>>>>> Stashed changes
 
 ## 2026-07-23
 
@@ -127,120 +125,7 @@ pure chore/docs commits). Direct pushes to main must also be logged here.
 
 ---
 
-<<<<<<< Updated upstream
 > Note (2026-07-16): this file previously contained StepFi-Contracts
 > content copied from the wrong repo. Replaced with real StepFi-API
 > history backfilled from `git log`. Entries older than 2026-06-18 are
 > in git history but were never tracked here.
-=======
-## Completed
-
-### Workspace Cleanup
-- Removed dead code: `lp-contract` (superseded by `liquidity-pool-contract`)
-- Removed empty placeholder: `adapter-trustless-contract`
-- Updated `Cargo.toml` workspace members to reflect 5 active contracts
-- Removed `[profile]` sections from individual contract `Cargo.toml` files (profiles belong in workspace root only)
-
-### Renaming
-- Renamed `merchant-registry-contract` → `vendor-registry-contract`
-- Updated all Rust source references: `merchant_registry_contract` → `vendor_registry_contract`
-- Updated all struct names: `MerchantRegistry*` → `VendorRegistry*`
-- Updated `Cargo.toml` dependency paths in `creditline-contract`
-
-### Critical Fixes
-- Added TTL constants (`PERSISTENT_TTL_THRESHOLD`, `PERSISTENT_TTL_EXTEND_TO`) to `creditline-contract/src/storage.rs`
-- Added `upgrade()` function to all 5 contracts: reputation, creditline, liquidity-pool, vendor-registry, parameters
-- All 5 contracts build cleanly: `cargo build` passes with zero errors (3 minor unused constant warnings — acceptable)
-
-### Deployment
-- Created `scripts/deploy-testnet.sh` — full deployment script covering all 5 contracts in correct dependency order
-- Script outputs contract IDs and saves to `.env.contracts`
-- StepFi-API deployed on Render ✅
-- Supabase project created, 24 migrations applied ✅
-- Upstash Redis connected ✅
-- Swagger docs live ✅
-
-### Documentation
-- `README.md` fully rewritten as StepFi-Contracts
-
-### CI Pipeline
-- Created `.github/workflows/ci.yml` — runs on push/PR to `main`
-- Steps: checkout → setup Node 20 → `npm ci` → `npm run build` → `npm test`
-- `node_modules` cached via `actions/cache@v4` keyed on `package-lock.json` hash
-- CI status badge added to `README.md` pointing at the workflow
-
-### Vendor Approval Lifecycle
-- Created database migration `20260817000001_add_vendor_status.sql` adding `status` column constrained to `pending`, `approved`, `suspended`, `rejected`, defaulting to `pending` and backfilling existing rows.
-- Added `buildApproveVendorXdr` and `buildSuspendVendorXdr` methods to `VendorRegistryContractClient` and `IVendorRegistryClient` to construct unsigned Soroban transaction XDRs.
-- Created `AdminGuard` to enforce allowlisted wallet access via `ADMIN_WALLETS` (401 for unauthenticated, 403 for non-admin).
-- Created `AuditAction` decorator and `AuditInterceptor` for audit-logging privileged admin operations.
-- Added `POST /vendors/:id/approve` and `POST /vendors/:id/suspend` endpoints returning unsigned XDRs, guarded with `JwtAuthGuard` and `AdminGuard`, decorated with full Swagger annotations and returning HTTP 409 Conflict for invalid vendor status transitions (`VENDOR_NOT_PENDING`, `VENDOR_NOT_APPROVED`).
-- Integrated status updates into `TransactionStatusCheckerProcessor` to update local Supabase `vendors` status only after on-chain transaction confirmation.
-### Learner Profile Auto-Creation
-- Added automatic creation of `learner_profiles` records upon first sign-in in `AuthService.findOrCreateUser()`, ensuring `GET /learners/me` resolves immediately after authentication.
-- Updated `auth.service.spec.ts` unit tests to cover table query and insertion handling for `learner_profiles`.
-
-
----
-
-## In Progress
-
-- None currently.
-
----
-
-## Next Up (In Order)
-
-1. **LoanType enum** — Add `LoanType::LearnerInstallment` variant to `creditline-contract/src/types.rs`
-2. **Per-installment tracking** — Add `paid: bool` and `paid_at: u64` fields to `RepaymentInstallment` struct
-3. **repay_installment()** — New function targeting a specific installment by index (instead of just reducing remaining balance)
-4. **Learner grace period** — Make `grace_period_seconds` per-loan (not just global via parameters)
-5. **Vouching contract** — New `vouching-contract` crate: `vouch()`, `revoke_vouch()`, `get_vouches()`, `get_vouch_count()`
-6. **Reputation rules** — Update `creditline-contract` to call different reputation adjustments for `LoanType::LearnerInstallment`
-7. **Testnet deployment** — Deploy all contracts, capture IDs, add to StepFi-API `.env`
-8. **End-to-end validation** — Verify loan lifecycle on testnet via Stellar CLI
-
----
-
-## Open Questions
-
-- What token is used for loans — native XLM or a USDC anchor? (Affects token contract address in `initialize()`)
-- Should the vouching contract be a standalone crate or logic added to `creditline-contract`? (Leaning toward standalone for modularity)
-- What is the correct `grace_period_seconds` for learner installment loans? (Longer than standard BNPL — possibly 7-14 days per installment)
-- Should sponsor pool deposits go through `liquidity-pool-contract` or a new `sponsor-pool-contract`?
-
----
-
-## Architecture Decisions
-
-- **5 contracts, not 6** — `lp-contract` was dead code, removed. `liquidity-pool-contract` is the canonical LP implementation.
-- **Vendor over Merchant** — Renamed to reflect StepFi's learning-focused domain.
-- **TTL approach** — Using 60-day threshold / 120-day extension constants. Off-chain indexer is responsible for bumping TTL on active loan entries.
-- **Upgrade pattern** — All contracts have `upgrade()` gated by admin `require_auth()`. Admin address is set at `initialize()` and transferable via `set_admin()`.
-- **Loan sharding** — 32 shards (`loan_id % 32`) in creditline-contract to distribute persistent storage keys and avoid hot-key contention.
-- **Reentrancy** — Boolean `LOCKED` flag in instance storage. Cheaper than mutex, sufficient for Soroban's single-threaded execution model.
-
----
-
-## Contract Deployment Status
-
-| Contract | Testnet Deployed | Contract ID | Last Deployed |
-|---|---|---|---|
-| `reputation-contract` | ❌ No | — | — |
-| `parameters-contract` | ❌ No | — | — |
-| `vendor-registry-contract` | ❌ No | — | — |
-| `liquidity-pool-contract` | ❌ No | — | — |
-| `creditline-contract` | ❌ No | — | — |
-
-> Update this table after running `scripts/deploy-testnet.sh`
-
----
-
-## Session Notes
-
-- Always run `cargo build` after any contract change before committing.
-- Always run `cargo test` before marking any contract feature complete.
-- Never modify storage key structures of a contract that has been deployed — it breaks existing data. Use a migration pattern or deploy a new contract.
-- The `creditline-contract` depends on all other contracts — it must be initialized last.
-- Do not add new workspace members to `Cargo.toml` without creating the full contract file structure first.
->>>>>>> Stashed changes
