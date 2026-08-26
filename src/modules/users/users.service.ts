@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { UsersRepository, UserPreferencesRecord, UserRole } from '../../database/repositories/users.repository';
+import { UserStatusService } from '../auth/user-status.service';
 import { UserProfileDto, UserPreferencesDto } from './dto/user-response.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserProfileDto } from './dto/user-profile.dto';
@@ -11,7 +12,10 @@ import { SetRoleResponseDto } from './dto/set-role.dto';
  */
 @Injectable()
 export class UsersService {
-    constructor(private readonly usersRepository: UsersRepository) { }
+    constructor(
+        private readonly usersRepository: UsersRepository,
+        private readonly userStatusService: UserStatusService,
+    ) { }
 
     /**
      * Retrieves the authenticated user's profile including preferences.
@@ -76,6 +80,8 @@ export class UsersService {
                 message: 'User not found.',
             });
         }
+
+        this.userStatusService.invalidate(wallet);
 
         return { wallet: updated.wallet_address, role: updated.role };
     }

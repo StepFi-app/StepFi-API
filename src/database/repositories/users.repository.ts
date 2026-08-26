@@ -226,6 +226,31 @@ export class UsersRepository {
         return (data as { wallet_address: string; role: UserRole } | null) ?? null;
     }
 
+    /**
+     * Admin override: sets or resets the user's role regardless of whether a role was set previously.
+     * Returns the updated user row, or null if the user does not exist.
+     */
+    async forceSetRole(
+        wallet: string,
+        role: UserRole | null,
+    ): Promise<{ wallet_address: string; role: UserRole | null } | null> {
+        const { data, error } = await this.supabaseService
+            .getServiceRoleClient()
+            .from('users')
+            .update({ role })
+            .eq('wallet_address', wallet)
+            .select('wallet_address, role')
+            .maybeSingle();
+
+        if (error) {
+            throw new InternalServerErrorException({
+                code: 'DATABASE_ROLE_UPDATE_FAILED',
+                message: 'Failed to update user role.',
+            });
+        }
+        return (data as { wallet_address: string; role: UserRole | null } | null) ?? null;
+    }
+
     // --- REGISTRATION METHODS ---
 
     async checkUsernameExists(username: string): Promise<boolean> {

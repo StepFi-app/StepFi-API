@@ -8,6 +8,8 @@ import { VendorRegistryContractClient } from '../../../../src/stellar/contracts/
 import { VendorType, VendorStatus } from '../../../../src/modules/vendors/dto/vendor.dto';
 import { VendorsRepository } from '../../../../src/database/repositories/vendors.repository';
 import { AdminGuard } from '../../../../src/common/guards/admin.guard';
+import { RolesGuard } from '../../../../src/auth/guards/roles.guard';
+import { UserStatusService } from '../../../../src/modules/auth/user-status.service';
 
 describe('VendorsModule', () => {
   let service: VendorsService;
@@ -80,6 +82,8 @@ describe('VendorsModule', () => {
       providers: [
         VendorsService,
         AdminGuard,
+        RolesGuard,
+        { provide: UserStatusService, useValue: { getRole: jest.fn().mockResolvedValue('vendor') } },
         { provide: SupabaseService, useValue: mockSupabaseService },
         { provide: VendorsRepository, useValue: { findByWallet: jest.fn() } },
         { provide: VendorRegistryContractClient, useValue: mockVendorRegistryClient },

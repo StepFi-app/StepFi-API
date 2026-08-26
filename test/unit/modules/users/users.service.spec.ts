@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UsersService } from '../../../../src/modules/users/users.service';
 import { UsersRepository } from '../../../../src/database/repositories/users.repository';
+import { UserStatusService } from '../../../../src/modules/auth/user-status.service';
 import { UpdateUserDto } from '../../../../src/modules/users/dto/update-user.dto';
 
 describe('UsersService', () => {
@@ -38,6 +39,12 @@ describe('UsersService', () => {
         create: jest.fn(),
         createDefaultPreferences: jest.fn(),
         update: jest.fn(),
+        setRoleIfUnset: jest.fn(),
+        findRoleByWallet: jest.fn(),
+    };
+
+    const mockUserStatusService = {
+        invalidate: jest.fn(),
     };
 
     beforeEach(async () => {
@@ -47,6 +54,10 @@ describe('UsersService', () => {
                 {
                     provide: UsersRepository,
                     useValue: mockUsersRepository,
+                },
+                {
+                    provide: UserStatusService,
+                    useValue: mockUserStatusService,
                 },
             ],
         }).compile();
@@ -298,6 +309,42 @@ describe('UsersService', () => {
                 notifications: false,
                 theme: 'dark',
                 language: 'es',
+            });
+        });
+    });
+
+    // ---------------------------------------------------------------------------
+    // setRole
+    // ---------------------------------------------------------------------------
+    describe('setRole', () => {
+        const wallet = 'GABC123XYZ456DEF789ABCDEF0123456789ABCDEF0123456789ABCDEFGHIJ';
+
+        it('should set role and invalidate status cache when role is unset', async () => {
+            mockUsersRepository.setRoleIfUnset.mockResolvedValue({ wallet_address: wallet, role: 'vendor' });
+
+            const result = await service.setRole(wallet, 'vendor');
+
+            expect(mockUsersRepository.setRoleIfUnset).toHaveBeenCalledWith(wallet, 'vendor');
+            expect(mockUserStatusService.invalidate).toHaveBeenCalledWith(wallet);
+            expect(result).toEqual({ wallet, role: 'vendor' });
+        });
+
+        it('should throw ConflictException (USERS_ROLE_ALREADY_SET) when role is already set', async () => {
+            mockUsersRepository.setRoleIfUnset.mockResolvedValue(null);
+            mockUsersRepository.findRoleByWallet.mockResolvedValue('sponsor');
+
+            await expect(service.setRole(wallet, 'vendor')).rejects.toMatchObject({
+                response: { code: 'USERS_ROLE_ALREADY_SET' },
+            });
+            expect(mockUserStatusService.invalidate).not.toHaveBeenCalled();
+        });
+
+        it('should throw NotFoundException (USERS_NOT_FOUND) when user does not exist', async () => {
+            mockUsersRepository.setRoleIfUnset.mockResolvedValue(null);
+            mockUsersRepository.findRoleByWallet.mockResolvedValue(null);
+
+            await expect(service.setRole(wallet, 'vendor')).rejects.toMatchObject({
+                response: { code: 'USERS_NOT_FOUND' },
             });
         });
     });

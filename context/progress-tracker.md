@@ -26,6 +26,21 @@ pure chore/docs commits). Direct pushes to main must also be logged here.
 - Tests: refresh-family rotation, replay → family-wide revocation + audit
   event, blocked-user denial within TTL bound, cache expiry re-query,
   cleanup job deletes-only-expired.
+<<<<<<< Updated upstream
+=======
+=======
+## 2026-08-26
+
+- Centralized role authorization on server truth: updated `UserStatusService` to cache user status and role with a 30s staleness bound (`USER_STATUS_CACHE_TTL_MS = 30_000`), and updated `RolesGuard` to enforce datastore roles instead of relying on un-enforced JWT role claims. Stale-token attacks are now rejected with 403 `AUTH_ROLE_FORBIDDEN`.
+- Added admin-only role-management endpoint `POST /admin/users/:wallet/role/reset` in `AdminRolesController`, guarded by `JwtAuthGuard` and `AdminGuard`, and audited via `@AuditAction('admin_users', 'RESET_USER_ROLE')` and `AuditInterceptor`.
+- Wired cache invalidation (`userStatusService.invalidate(wallet)`) into `setRole` and admin role reset, ensuring role changes take effect immediately on local server instance and within 30s across instances.
+- Added unit tests for `RolesGuard`, `AdminRolesController`, `UserStatusService`, and `UsersService.setRole`.
+- Fixed registration race conditions in `AuthService.register()` by eliminating application-side pre-checks (`findByWallet`, `checkUsernameExists`) and relying directly on DB-level UNIQUE constraints (`users.wallet_address`, `users.username`).
+- Added idempotent migration `20260826130000_ensure_users_unique_constraints.sql` to ensure unique indexes exist on `users.wallet_address` and `users.username`.
+- Updated `UsersRepository.createProfile()` to catch PostgreSQL unique constraint violation error `23505` and map to structured 409 `ConflictException` (`AUTH_WALLET_EXISTS`, `AUTH_USERNAME_TAKEN`).
+- Added cleanup handlers (`deleteAvatar`, `deleteUserById`) in `AuthService.register()` and `UsersRepository` to ensure failed registrations do not leave orphaned avatar files or partial user records.
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
 
 ## 2026-07-23
 

@@ -12,6 +12,8 @@ import { UsersRepository } from '../../database/repositories/users.repository';
 import { getJwtConfig } from '../../config/jwt.config';
 import { AdminModule } from '../admin/admin.module';
 
+import { RolesGuard } from '../../auth/guards/roles.guard';
+
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
@@ -23,7 +25,7 @@ import { AdminModule } from '../admin/admin.module';
     AdminModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, UserStatusService, ApiKeyGuard, SupabaseService, ConfigService, UsersRepository],
-  exports: [AuthService, JwtStrategy, UserStatusService, ApiKeyGuard, PassportModule],
+  providers: [AuthService, JwtStrategy, UserStatusService, ApiKeyGuard, RolesGuard, SupabaseService, ConfigService, UsersRepository],
+  exports: [AuthService, JwtStrategy, UserStatusService, ApiKeyGuard, RolesGuard, PassportModule],
 })
 export class AuthModule {}

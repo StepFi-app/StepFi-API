@@ -4,8 +4,10 @@ import {
   ExecutionContext,
   ForbiddenException,
   SetMetadata,
+  Optional,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { UserStatusService } from '../../modules/auth/user-status.service';
 
 export const ROLES_KEY = 'roles';
 
@@ -19,18 +21,22 @@ export const ROLES_KEY = 'roles';
 export const Roles = (...roles: string[]) => SetMetadata(ROLES_KEY, roles);
 
 /**
- * Enforces the role claim carried in the JWT (set by JwtStrategy.validate).
+ * Enforces user role authorization based on server truth in the datastore
+ * (resolved via short-TTL cached UserStatusService).
  *
  * - Routes without @Roles metadata are unaffected.
- * - Tokens without a role claim (role not chosen yet, or token issued
- *   before the role was set) are rejected with 403; the client must call
- *   POST /auth/refresh after setting a role to obtain the claim.
+ * - The JWT role claim is treated as a hint only; live datastore role is enforced.
+ * - Roles revoked or changed server-side take effect within USER_STATUS_CACHE_TTL_MS (30s)
+ *   or immediately upon cache invalidation.
  */
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(
+    private readonly reflector: Reflector,
+    @Optional() private readonly userStatusService?: UserStatusService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const requiredRoles = this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -41,7 +47,21 @@ export class RolesGuard implements CanActivate {
       .switchToHttp()
       .getRequest<{ user?: { wallet: string; role?: string | null } }>();
 
-    if (!user?.role || !requiredRoles.includes(user.role)) {
+    if (!user) {
+      throw new ForbiddenException({
+        code: 'AUTH_ROLE_FORBIDDEN',
+        message: `This action requires one of the following roles: ${requiredRoles.join(', ')}.`,
+      });
+    }
+
+    let currentRole: string | null = null;
+    if (this.userStatusService && user.wallet) {
+      currentRole = await this.userStatusService.getRole(user.wallet);
+    } else {
+      currentRole = user.role ?? null;
+    }
+
+    if (!currentRole || !requiredRoles.includes(currentRole)) {
       throw new ForbiddenException({
         code: 'AUTH_ROLE_FORBIDDEN',
         message: `This action requires one of the following roles: ${requiredRoles.join(', ')}. If you just selected your role, refresh your access token.`,
@@ -50,3 +70,5 @@ export class RolesGuard implements CanActivate {
     return true;
   }
 }
+
+
