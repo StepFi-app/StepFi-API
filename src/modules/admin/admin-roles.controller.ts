@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { AdminGuard } from '../../auth/guards/admin.guard';
+import { AdminGuard } from './admin.guard';
 import { AuditInterceptor } from '../../common/interceptors/audit.interceptor';
 import { AuditAction } from '../../common/decorators/audit-action.decorator';
 import { UsersRepository } from '../../database/repositories/users.repository';

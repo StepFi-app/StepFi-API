@@ -6,6 +6,13 @@ pure chore/docs commits). Direct pushes to main must also be logged here.
 
 ---
 
+## 2026-08-27
+
+- **Server-truth AdminGuard for /admin routes**: Added `AdminGuard` in `src/modules/admin/admin.guard.ts` authorizing against datastore server truth (`users.role === 'admin'`) via `UserStatusService` rather than trusting JWT claims alone.
+- **Audit Logging of Denied Admin Access**: Unauthorized or probing access attempts to `/admin` routes now record an `ADMIN_ACCESS_DENIED` entry in `audit_logs` via `AuditService` and return 403 `ADMIN_FORBIDDEN`.
+- **Admin controllers secured**: Applied server-truth `AdminGuard` across the `/admin` controller tree (`AuditController`, `AdminRolesController`).
+- Tests: Added unit coverage in `admin.guard.spec.ts` for non-admin rejection (403), active admin grant (200), blocked admin rejection (401), unauthenticated rejection (401), stale JWT claim with revoked DB role rejection (403), and audit log emission on denied access attempts.
+
 ## 2026-08-24
 
 - **Session families + refresh-token replay detection** (`sessions.family_id`

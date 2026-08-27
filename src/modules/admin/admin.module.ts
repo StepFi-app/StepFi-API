@@ -5,11 +5,11 @@ import { AdminRolesController } from './admin-roles.controller';
 import { SupabaseService } from '../../database/supabase.client';
 import { UsersRepository } from '../../database/repositories/users.repository';
 import { UserStatusService } from '../auth/user-status.service';
-import { AdminGuard } from '../../auth/guards/admin.guard';
+import { AdminGuard } from './admin.guard';
 
 @Module({
   controllers: [AuditController, AdminRolesController],
   providers: [AuditService, SupabaseService, UsersRepository, UserStatusService, AdminGuard],
-  exports: [AuditService, UserStatusService],
+  exports: [AuditService, UserStatusService, AdminGuard],
 })
 export class AdminModule {}
