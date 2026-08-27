@@ -8,10 +8,63 @@ pure chore/docs commits). Direct pushes to main must also be logged here.
 
 ## 2026-08-27
 
-- **Server-truth AdminGuard for /admin routes**: Added `AdminGuard` in `src/modules/admin/admin.guard.ts` authorizing against datastore server truth (`users.role === 'admin'`) via `UserStatusService` rather than trusting JWT claims alone.
-- **Audit Logging of Denied Admin Access**: Unauthorized or probing access attempts to `/admin` routes now record an `ADMIN_ACCESS_DENIED` entry in `audit_logs` via `AuditService` and return 403 `ADMIN_FORBIDDEN`.
-- **Admin controllers secured**: Applied server-truth `AdminGuard` across the `/admin` controller tree (`AuditController`, `AdminRolesController`).
-- Tests: Added unit coverage in `admin.guard.spec.ts` for non-admin rejection (403), active admin grant (200), blocked admin rejection (401), unauthenticated rejection (401), stale JWT claim with revoked DB role rejection (403), and audit log emission on denied access attempts.
+- Closed the audit gaps on `POST /transactions/submit` (#117):
+  - **Fail-closed contract allowlist** — the contract ID for the declared
+    type must be configured and the XDR must target it. Function-name-only
+    matching was removed: an unset contract ID now rejects with
+    `TRANSACTION_CONTRACT_NOT_CONFIGURED`, and an invocation whose target
+    contract cannot be determined from the XDR rejects with
+    `TRANSACTION_TYPE_MISMATCH` instead of silently skipping the check.
+  - **No stale pending rows on submission failure** — when Horizon rejects
+    the transaction (or submission fails unexpectedly), the persisted record
+    is marked `failed` with the mapped error message and `completed_at`, so
+    the row no longer lingers as `pending` attributable to the submitting
+    wallet. Transient network unavailability (503) leaves the row `pending`
+    for the status checker to reconcile, since the transaction may still be
+    in flight.
+  - Resolved the committed merge-conflict markers in this file (stale
+    StepFi-Contracts content from the wrong repo removed; StepFi-API history
+    retained).
+
+## 2026-08-26
+
+- Fixed registration race conditions in `AuthService.register()` by eliminating application-side pre-checks (`findByWallet`, `checkUsernameExists`) and relying directly on DB-level UNIQUE constraints (`users.wallet_address`, `users.username`).
+- Added idempotent migration `20260826130000_ensure_users_unique_constraints.sql` to ensure unique indexes exist on `users.wallet_address` and `users.username`.
+- Updated `UsersRepository.createProfile()` to catch PostgreSQL unique constraint violation error `23505` and map to structured 409 `ConflictException` (`AUTH_WALLET_EXISTS`, `AUTH_USERNAME_TAKEN`).
+- Added cleanup handlers (`deleteAvatar`, `deleteUserById`) in `AuthService.register()` and `UsersRepository` to ensure failed registrations do not leave orphaned avatar files or partial user records.
+
+## 2026-08-25
+
+- Secured `POST /transactions/submit` (#117):
+  - **Source binding** — the authenticated wallet must be the transaction
+    source account (or the inner source for fee-bump transactions), or must
+    appear as an authorized address in the Soroban invocation auth. Third-party
+    XDR where the wallet is neither source nor authorizer is rejected with
+    `TRANSACTION_SOURCE_MISMATCH`. (Deposit/withdraw/repay/vendor XDRs built
+    by this API use a random source account and authorize via Soroban auth, so
+    the auth check keeps those flows working.)
+  - **Operation allowlist per type** — every operation must be a Soroban
+    `invokeHostFunction` whose function name matches the declared type
+    (`create_loan`, `repay_loan`/`repay_installment`, `deposit`, `withdraw`,
+    `approve_vendor`, `suspend_vendor`) and must target the contract owned by
+    that flow. Rejections use `TRANSACTION_TYPE_MISMATCH` /
+    `TRANSACTION_OPERATION_NOT_ALLOWED`.
+  - **Idempotency** — migration
+    `20260825000001_add_unique_transaction_hash.sql` adds partial unique
+    indexes on `transaction_hash` and `hash` (with pre-existing row dedupe);
+    the service checks for an existing record before submitting and returns it
+    (`duplicate: true`) instead of re-submitting, with the unique-constraint
+    violation as the concurrency backstop.
+  - **Rate limits** — `WalletThrottlerGuard` keys `@nestjs/throttler` on the
+    authenticated wallet; the submit route is limited to 10 req / 60 s per
+    wallet AND per IP (global guard), matching the auth-endpoint pattern.
+  - **Persistence-first** — the local record is written (await) before the
+    Horizon submission, so persistence failures surface as
+    `TRANSACTION_PERSISTENCE_FAILED` instead of being silently dropped, and
+    the transaction hash is always known to the status checker / indexer.
+  - Updated `SubmitTransactionResponseDto` (`status` may reflect the recorded
+    status, plus `duplicate` flag), controller Swagger, and unit tests covering
+    every rejection branch plus the happy path.
 
 ## 2026-08-24
 
@@ -33,13 +86,6 @@ pure chore/docs commits). Direct pushes to main must also be logged here.
 - Tests: refresh-family rotation, replay → family-wide revocation + audit
   event, blocked-user denial within TTL bound, cache expiry re-query,
   cleanup job deletes-only-expired.
-
-## 2026-08-26
-
-- Fixed registration race conditions in `AuthService.register()` by eliminating application-side pre-checks (`findByWallet`, `checkUsernameExists`) and relying directly on DB-level UNIQUE constraints (`users.wallet_address`, `users.username`).
-- Added idempotent migration `20260826130000_ensure_users_unique_constraints.sql` to ensure unique indexes exist on `users.wallet_address` and `users.username`.
-- Updated `UsersRepository.createProfile()` to catch PostgreSQL unique constraint violation error `23505` and map to structured 409 `ConflictException` (`AUTH_WALLET_EXISTS`, `AUTH_USERNAME_TAKEN`).
-- Added cleanup handlers (`deleteAvatar`, `deleteUserById`) in `AuthService.register()` and `UsersRepository` to ensure failed registrations do not leave orphaned avatar files or partial user records.
 
 ## 2026-07-23
 

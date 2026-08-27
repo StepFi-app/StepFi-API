@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { TransactionsController } from '../../../../src/modules/transactions/transactions.controller';
 import { TransactionType } from '../../../../src/modules/transactions/dto/submit-transaction-request.dto';
 import { TransactionsService } from '../../../../src/modules/transactions/transactions.service';
@@ -18,7 +19,11 @@ describe('TransactionsController', () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
+      imports: [ThrottlerModule.forRoot([{ ttl: 60000, limit: 1000 }])],
       controllers: [TransactionsController],
+      // The WalletThrottlerGuard on the submit route needs the throttler
+      // options/storage provided by ThrottlerModule above; the JWT guard is
+      // resolved by passport and needs no providers here.
       providers: [{ provide: TransactionsService, useValue: mockTransactionsService }],
     }).compile();
 

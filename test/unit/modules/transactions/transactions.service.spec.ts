@@ -60,10 +60,24 @@ describe('TransactionsService', () => {
     getServiceRoleClient: jest.fn().mockReturnValue(mockSupabaseClient),
   };
 
+  const LIQUIDITY_CONTRACT_ID = 'CCBK3YMI3RVGWFUREH5PZMG3HIU3L2XF6YXB2DPFQ4V42Q4JWXPGFSMB';
+  const CREDIT_LINE_CONTRACT_ID = StellarSdk.StrKey.encodeContract(
+    Buffer.from('credit-line-test-contract-id-0000000000000000'.slice(0, 32)),
+  );
+  const VENDOR_REGISTRY_CONTRACT_ID = StellarSdk.StrKey.encodeContract(
+    Buffer.from('vendor-registry-test-contract-id-0000000000000'.slice(0, 32)),
+  );
+  const OTHER_CONTRACT_ID = StellarSdk.StrKey.encodeContract(
+    Buffer.from('some-unrelated-attacker-contract-id-00000000'.slice(0, 32)),
+  );
+
   const mockConfigService = {
     get: jest.fn((key: string) => {
       if (key === 'STELLAR_HORIZON_URL') return 'https://horizon-testnet.stellar.org';
       if (key === 'STELLAR_NETWORK_PASSPHRASE') return StellarSdk.Networks.TESTNET;
+      if (key === 'LIQUIDITY_POOL_CONTRACT_ID') return LIQUIDITY_CONTRACT_ID;
+      if (key === 'CREDIT_LINE_CONTRACT_ID') return CREDIT_LINE_CONTRACT_ID;
+      if (key === 'VENDOR_REGISTRY_CONTRACT_ID') return VENDOR_REGISTRY_CONTRACT_ID;
       return undefined;
     }),
   };
@@ -316,6 +330,116 @@ describe('TransactionsService', () => {
     return tx.toXDR();
   }
 
+  /**
+   * Builds a signed Soroban invokeHostFunction transaction with the given
+   * source account, contract ID, and function name (the shape the StepFi XDR
+   * builders produce).
+   */
+  function buildSorobanTx(
+    sourceKeypair: StellarSdk.Keypair,
+    functionName: string,
+    contractId: string,
+  ): StellarSdk.Transaction {
+    const source = sourceKeypair.publicKey();
+    const account = new StellarSdk.Account(source, '0');
+    const tx = new StellarSdk.TransactionBuilder(account, {
+      fee: '100',
+      networkPassphrase: StellarSdk.Networks.TESTNET,
+    })
+      .addOperation(
+        new StellarSdk.Contract(contractId).call(
+          functionName,
+          StellarSdk.nativeToScVal(source, { type: 'string' }),
+          StellarSdk.nativeToScVal(100, { type: 'i128' }),
+        ),
+      )
+      .setTimeout(30)
+      .build();
+    tx.sign(sourceKeypair);
+    return tx;
+  }
+
+  function buildSorobanXdr(
+    sourceKeypair: StellarSdk.Keypair,
+    functionName: string,
+    contractId: string,
+  ): string {
+    return buildSorobanTx(sourceKeypair, functionName, contractId).toXDR();
+  }
+
+  function buildFeeBumpSorobanXdr(
+    innerSourceKeypair: StellarSdk.Keypair,
+    functionName: string,
+    contractId: string,
+  ): string {
+    const feeKeypair = StellarSdk.Keypair.random();
+    const inner = buildSorobanTx(innerSourceKeypair, functionName, contractId);
+    const feeBump = StellarSdk.TransactionBuilder.buildFeeBumpTransaction(
+      feeKeypair.publicKey(),
+      StellarSdk.BASE_FEE,
+      inner,
+      StellarSdk.Networks.TESTNET,
+    );
+    feeBump.sign(feeKeypair);
+    return feeBump.toXDR();
+  }
+
+  /**
+   * Computes the transaction hash (hex) exactly as the service does.
+   */
+  function hashOfXdr(xdr: string): string {
+    return StellarSdk.TransactionBuilder.fromXDR(xdr, StellarSdk.Networks.TESTNET)
+      .hash()
+      .toString('hex');
+  }
+
+  /**
+   * Builds a fake parsed transaction whose invokeHostFunction operation carries
+   * the given Soroban auth addresses — used to exercise the wallet-authorizes
+   * path where the source account differs from the authenticated wallet.
+   */
+  function buildFakeSorobanTransaction(opts: {
+    source: string;
+    functionName: string;
+    contractId: string;
+    authAddresses?: string[];
+    hash?: string;
+    omitContractId?: boolean;
+  }) {
+    const auth = (opts.authAddresses ?? []).map((address) => ({
+      credentials: () => ({
+        switch: () => ({ name: 'sorobanCredentialsAddress' }),
+        value: () => ({
+          address: () => ({
+            address: () => ({ toString: () => address }),
+          }),
+        }),
+      }),
+    }));
+    const attributes: Record<string, unknown> = {
+      functionName: { toString: () => opts.functionName },
+      auth,
+    };
+    if (!opts.omitContractId) {
+      attributes.contractAddress = Buffer.from(
+        StellarSdk.StrKey.decodeContract(opts.contractId),
+      );
+    }
+    const operation = {
+      type: 'invokeHostFunction',
+      func: {
+        _value: {
+          _attributes: attributes,
+        },
+      },
+    };
+    return {
+      source: opts.source,
+      operations: [operation],
+      hash: () => Buffer.from(opts.hash ?? 'b'.repeat(64), 'hex'),
+    };
+  }
+
   function buildHorizonResultCodesError(transaction: string, operations: string[] = []): unknown {
     return {
       response: { data: { extras: { result_codes: { transaction, operations } } } },
@@ -328,66 +452,376 @@ describe('TransactionsService', () => {
   // ══════════════════════════════════════════════════════════════════════════
 
   describe('submitTransaction', () => {
-    it('returns pending status and the transaction hash on a successful Horizon submission', async () => {
-      mockSubmitTransaction.mockResolvedValue({ hash: validHash });
+    let walletKeypair: StellarSdk.Keypair;
+    let wallet: string;
 
-      const result = await service.submitTransaction(validWallet, {
-        xdr: buildValidXdr(),
+    beforeEach(() => {
+      walletKeypair = StellarSdk.Keypair.random();
+      wallet = walletKeypair.publicKey();
+      // The pre-insert idempotency lookup misses by default.
+      mockDbLookup(null);
+    });
+
+    it('submits a valid Soroban deposit from the wallet source account', async () => {
+      const xdr = buildSorobanXdr(walletKeypair, 'deposit', LIQUIDITY_CONTRACT_ID);
+      const expectedHash = hashOfXdr(xdr);
+      mockSubmitTransaction.mockResolvedValue({ hash: expectedHash });
+
+      const result = await service.submitTransaction(wallet, {
+        xdr,
         type: 'deposit' as TransactionType,
       });
 
-      expect(result).toEqual({ transactionHash: validHash, status: 'pending' });
+      expect(result).toEqual({ transactionHash: expectedHash, status: 'pending' });
       expect(mockSubmitTransaction).toHaveBeenCalledTimes(1);
+      expect(mockSupabaseTable.insert).toHaveBeenCalledTimes(1);
     });
 
     it('throws BadRequestException with TRANSACTION_INVALID_XDR when XDR is malformed', async () => {
       await expect(
-        service.submitTransaction(validWallet, { xdr: 'not-valid-xdr', type: 'deposit' as TransactionType }),
+        service.submitTransaction(wallet, { xdr: 'not-valid-xdr', type: 'deposit' as TransactionType }),
       ).rejects.toThrow(BadRequestException);
 
       await expect(
-        service.submitTransaction(validWallet, { xdr: 'not-valid-xdr', type: 'deposit' as TransactionType }),
+        service.submitTransaction(wallet, { xdr: 'not-valid-xdr', type: 'deposit' as TransactionType }),
       ).rejects.toMatchObject({ response: { code: 'TRANSACTION_INVALID_XDR' } });
     });
 
+    it('rejects a classic (non-Soroban) transaction with TRANSACTION_OPERATION_NOT_ALLOWED', async () => {
+      await expect(
+        service.submitTransaction(wallet, {
+          xdr: buildValidXdr(),
+          type: 'deposit' as TransactionType,
+        }),
+      ).rejects.toMatchObject({ response: { code: 'TRANSACTION_OPERATION_NOT_ALLOWED' } });
+
+      expect(mockSubmitTransaction).not.toHaveBeenCalled();
+    });
+
+    it('rejects a transaction whose invoked function does not match the declared type', async () => {
+      const xdr = buildSorobanXdr(walletKeypair, 'withdraw', LIQUIDITY_CONTRACT_ID);
+
+      await expect(
+        service.submitTransaction(wallet, {
+          xdr,
+          type: 'deposit' as TransactionType,
+        }),
+      ).rejects.toMatchObject({ response: { code: 'TRANSACTION_TYPE_MISMATCH' } });
+
+      expect(mockSubmitTransaction).not.toHaveBeenCalled();
+    });
+
+    it('rejects a transaction targeting a contract other than the configured one for the type', async () => {
+      const xdr = buildSorobanXdr(walletKeypair, 'deposit', OTHER_CONTRACT_ID);
+
+      await expect(
+        service.submitTransaction(wallet, {
+          xdr,
+          type: 'deposit' as TransactionType,
+        }),
+      ).rejects.toMatchObject({ response: { code: 'TRANSACTION_TYPE_MISMATCH' } });
+
+      expect(mockSubmitTransaction).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when the contract ID for the declared type is not configured', async () => {
+      const xdr = buildSorobanXdr(walletKeypair, 'deposit', LIQUIDITY_CONTRACT_ID);
+      // The function name and source are valid, but the allowlist must not
+      // degrade to function-name-only matching when the contract ID is unset.
+      mockConfigService.get.mockImplementationOnce(() => undefined);
+
+      await expect(
+        service.submitTransaction(wallet, {
+          xdr,
+          type: 'deposit' as TransactionType,
+        }),
+      ).rejects.toMatchObject({ response: { code: 'TRANSACTION_CONTRACT_NOT_CONFIGURED' } });
+
+      expect(mockSubmitTransaction).not.toHaveBeenCalled();
+      expect(mockSupabaseTable.insert).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when the target contract address cannot be determined from the XDR', async () => {
+      const fakeTx = buildFakeSorobanTransaction({
+        source: wallet,
+        functionName: 'deposit',
+        contractId: LIQUIDITY_CONTRACT_ID,
+        omitContractId: true,
+      });
+      const fromXdrSpy = jest
+        .spyOn(StellarSdk.TransactionBuilder, 'fromXDR')
+        .mockReturnValue(fakeTx as any);
+
+      try {
+        await expect(
+          service.submitTransaction(wallet, {
+            xdr: 'AAAA',
+            type: 'deposit' as TransactionType,
+          }),
+        ).rejects.toMatchObject({ response: { code: 'TRANSACTION_TYPE_MISMATCH' } });
+        expect(mockSubmitTransaction).not.toHaveBeenCalled();
+      } finally {
+        fromXdrSpy.mockRestore();
+      }
+    });
+
+    it('rejects third-party XDR where the wallet is neither source nor authorizer', async () => {
+      const attackerKeypair = StellarSdk.Keypair.random();
+      const xdr = buildSorobanXdr(attackerKeypair, 'deposit', LIQUIDITY_CONTRACT_ID);
+
+      await expect(
+        service.submitTransaction(wallet, {
+          xdr,
+          type: 'deposit' as TransactionType,
+        }),
+      ).rejects.toMatchObject({ response: { code: 'TRANSACTION_SOURCE_MISMATCH' } });
+
+      expect(mockSubmitTransaction).not.toHaveBeenCalled();
+    });
+
+    it('accepts XDR whose source differs from the wallet when the wallet authorizes via Soroban auth', async () => {
+      const fakeTx = buildFakeSorobanTransaction({
+        source: StellarSdk.Keypair.random().publicKey(),
+        functionName: 'deposit',
+        contractId: LIQUIDITY_CONTRACT_ID,
+        authAddresses: [wallet],
+      });
+      const fromXdrSpy = jest
+        .spyOn(StellarSdk.TransactionBuilder, 'fromXDR')
+        .mockReturnValue(fakeTx as any);
+      mockSubmitTransaction.mockResolvedValue({ hash: 'b'.repeat(64) });
+
+      try {
+        const result = await service.submitTransaction(wallet, {
+          xdr: 'AAAA',
+          type: 'deposit' as TransactionType,
+        });
+        expect(result.status).toBe('pending');
+        expect(mockSubmitTransaction).toHaveBeenCalledTimes(1);
+      } finally {
+        fromXdrSpy.mockRestore();
+      }
+    });
+
+    it('rejects XDR where the wallet is not in the Soroban auth either', async () => {
+      const fakeTx = buildFakeSorobanTransaction({
+        source: StellarSdk.Keypair.random().publicKey(),
+        functionName: 'deposit',
+        contractId: LIQUIDITY_CONTRACT_ID,
+        authAddresses: [StellarSdk.Keypair.random().publicKey()],
+      });
+      const fromXdrSpy = jest
+        .spyOn(StellarSdk.TransactionBuilder, 'fromXDR')
+        .mockReturnValue(fakeTx as any);
+
+      try {
+        await expect(
+          service.submitTransaction(wallet, {
+            xdr: 'AAAA',
+            type: 'deposit' as TransactionType,
+          }),
+        ).rejects.toMatchObject({ response: { code: 'TRANSACTION_SOURCE_MISMATCH' } });
+        expect(mockSubmitTransaction).not.toHaveBeenCalled();
+      } finally {
+        fromXdrSpy.mockRestore();
+      }
+    });
+
+    it('accepts a fee-bump transaction whose inner source is the wallet', async () => {
+      const xdr = buildFeeBumpSorobanXdr(walletKeypair, 'deposit', LIQUIDITY_CONTRACT_ID);
+      const expectedHash = hashOfXdr(xdr);
+      mockSubmitTransaction.mockResolvedValue({ hash: expectedHash });
+
+      const result = await service.submitTransaction(wallet, {
+        xdr,
+        type: 'deposit' as TransactionType,
+      });
+
+      expect(result).toEqual({ transactionHash: expectedHash, status: 'pending' });
+      expect(mockSubmitTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a fee-bump transaction whose inner source is not the wallet', async () => {
+      const attackerKeypair = StellarSdk.Keypair.random();
+      const xdr = buildFeeBumpSorobanXdr(attackerKeypair, 'deposit', LIQUIDITY_CONTRACT_ID);
+
+      await expect(
+        service.submitTransaction(wallet, {
+          xdr,
+          type: 'deposit' as TransactionType,
+        }),
+      ).rejects.toMatchObject({ response: { code: 'TRANSACTION_SOURCE_MISMATCH' } });
+
+      expect(mockSubmitTransaction).not.toHaveBeenCalled();
+    });
+
+    it('returns the existing record without re-submitting when the hash was already recorded', async () => {
+      const xdr = buildSorobanXdr(walletKeypair, 'deposit', LIQUIDITY_CONTRACT_ID);
+      const expectedHash = hashOfXdr(xdr);
+      mockDbLookup({
+        hash: expectedHash,
+        type: 'deposit' as TransactionType,
+        status: 'success',
+        submitted_at: '2026-03-23T05:15:00.000Z',
+      });
+
+      const result = await service.submitTransaction(wallet, {
+        xdr,
+        type: 'deposit' as TransactionType,
+      });
+
+      expect(result).toEqual({
+        transactionHash: expectedHash,
+        status: 'success',
+        duplicate: true,
+      });
+      expect(mockSubmitTransaction).not.toHaveBeenCalled();
+      expect(mockSupabaseTable.insert).not.toHaveBeenCalled();
+    });
+
+    it('returns the existing record when a concurrent duplicate hits the unique constraint', async () => {
+      const xdr = buildSorobanXdr(walletKeypair, 'deposit', LIQUIDITY_CONTRACT_ID);
+      const expectedHash = hashOfXdr(xdr);
+
+      mockSupabaseTable.select.mockReturnThis();
+      mockSupabaseTable.eq.mockReturnThis();
+      // Pre-check queries both hash columns and misses; the post-race lookup
+      // (after the unique-violation insert error) finds the existing record.
+      mockSupabaseTable.maybeSingle
+        .mockResolvedValueOnce({ data: null, error: null })
+        .mockResolvedValueOnce({ data: null, error: null })
+        .mockResolvedValue({
+          data: {
+            hash: expectedHash,
+            type: 'deposit' as TransactionType,
+            status: 'pending',
+            submitted_at: '2026-03-23T05:15:00.000Z',
+          },
+          error: null,
+        });
+      mockSupabaseTable.insert.mockRejectedValueOnce({
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "transactions_transaction_hash_unique"',
+      });
+
+      const result = await service.submitTransaction(wallet, {
+        xdr,
+        type: 'deposit' as TransactionType,
+      });
+
+      expect(result).toEqual({
+        transactionHash: expectedHash,
+        status: 'pending',
+        duplicate: true,
+      });
+      expect(mockSubmitTransaction).not.toHaveBeenCalled();
+    });
+
+    it('surfaces persistence failures instead of silently dropping them', async () => {
+      const xdr = buildSorobanXdr(walletKeypair, 'deposit', LIQUIDITY_CONTRACT_ID);
+      mockSupabaseTable.insert.mockRejectedValueOnce({
+        message: 'connection refused',
+      });
+
+      await expect(
+        service.submitTransaction(wallet, {
+          xdr,
+          type: 'deposit' as TransactionType,
+        }),
+      ).rejects.toMatchObject({ response: { code: 'TRANSACTION_PERSISTENCE_FAILED' } });
+
+      expect(mockSubmitTransaction).not.toHaveBeenCalled();
+    });
 
     it('throws BadRequestException mapped from a known tx-level result code (tx_bad_auth)', async () => {
+      const xdr = buildSorobanXdr(walletKeypair, 'deposit', LIQUIDITY_CONTRACT_ID);
       mockSubmitTransaction.mockRejectedValue(
         buildHorizonResultCodesError('tx_bad_auth'),
       );
 
       await expect(
-        service.submitTransaction(validWallet, { xdr: buildValidXdr(), type: 'deposit' as TransactionType }),
+        service.submitTransaction(wallet, { xdr, type: 'deposit' as TransactionType }),
       ).rejects.toMatchObject({
         response: { code: 'STELLAR_TX_BAD_AUTH' },
       });
     });
 
+    it('marks the persisted record as failed when Horizon rejects the transaction', async () => {
+      const xdr = buildSorobanXdr(walletKeypair, 'deposit', LIQUIDITY_CONTRACT_ID);
+      mockSubmitTransaction.mockRejectedValue(
+        buildHorizonResultCodesError('tx_bad_auth'),
+      );
+
+      await expect(
+        service.submitTransaction(wallet, { xdr, type: 'deposit' as TransactionType }),
+      ).rejects.toMatchObject({ response: { code: 'STELLAR_TX_BAD_AUTH' } });
+
+      // The locally persisted pending row is updated to failed with the same
+      // message the client receives, so it does not linger as stale pending.
+      expect(mockSupabaseTable.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'failed',
+          error: 'Invalid transaction signature. Please re-sign and try again.',
+          completed_at: now,
+        }),
+      );
+      expect(mockSupabaseTable.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the record pending when Horizon is temporarily unavailable', async () => {
+      const xdr = buildSorobanXdr(walletKeypair, 'deposit', LIQUIDITY_CONTRACT_ID);
+      mockSubmitTransaction.mockRejectedValue(new Error('network timeout'));
+
+      await expect(
+        service.submitTransaction(wallet, { xdr, type: 'deposit' as TransactionType }),
+      ).rejects.toThrow(ServiceUnavailableException);
+
+      // The transaction may still be in flight — the row stays pending so the
+      // status checker can reconcile the truth.
+      expect(mockSupabaseTable.update).not.toHaveBeenCalled();
+    });
+
+    it('marks the persisted record as failed on an unexpected Horizon submission error', async () => {
+      const xdr = buildSorobanXdr(walletKeypair, 'deposit', LIQUIDITY_CONTRACT_ID);
+      mockSubmitTransaction.mockRejectedValue(new Error('something unexpected'));
+
+      await expect(
+        service.submitTransaction(wallet, { xdr, type: 'deposit' as TransactionType }),
+      ).rejects.toThrow(InternalServerErrorException);
+
+      expect(mockSupabaseTable.update).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'failed' }),
+      );
+    });
+
     it('throws BadRequestException with STELLAR_TRANSACTION_FAILED for an unmapped result code', async () => {
+      const xdr = buildSorobanXdr(walletKeypair, 'deposit', LIQUIDITY_CONTRACT_ID);
       mockSubmitTransaction.mockRejectedValue(
         buildHorizonResultCodesError('tx_some_unknown_code'),
       );
 
       await expect(
-        service.submitTransaction(validWallet, { xdr: buildValidXdr(), type: 'deposit' as TransactionType }),
+        service.submitTransaction(wallet, { xdr, type: 'deposit' as TransactionType }),
       ).rejects.toMatchObject({
         response: { code: 'STELLAR_TRANSACTION_FAILED' },
       });
     });
 
     it('throws ServiceUnavailableException when Horizon submission times out', async () => {
+      const xdr = buildSorobanXdr(walletKeypair, 'deposit', LIQUIDITY_CONTRACT_ID);
       mockSubmitTransaction.mockRejectedValue(new Error('network timeout'));
 
       await expect(
-        service.submitTransaction(validWallet, { xdr: buildValidXdr(), type: 'deposit' as TransactionType }),
+        service.submitTransaction(wallet, { xdr, type: 'deposit' as TransactionType }),
       ).rejects.toThrow(ServiceUnavailableException);
     });
 
     it('throws InternalServerErrorException for an unexpected Horizon submission error', async () => {
+      const xdr = buildSorobanXdr(walletKeypair, 'deposit', LIQUIDITY_CONTRACT_ID);
       mockSubmitTransaction.mockRejectedValue(new Error('something unexpected'));
 
       await expect(
-        service.submitTransaction(validWallet, { xdr: buildValidXdr(), type: 'deposit' as TransactionType }),
+        service.submitTransaction(wallet, { xdr, type: 'deposit' as TransactionType }),
       ).rejects.toThrow(InternalServerErrorException);
     });
   });
