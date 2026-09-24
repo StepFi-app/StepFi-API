@@ -221,12 +221,12 @@ export class TransactionStatusCheckerProcessor extends WorkerHost {
     return { found: false };
   }
 
-  private extractHorizonError(response: any): string | undefined {
-    if (!response) {
-      return undefined;
-    }
-
-    const codes = response.result_codes;
+  private extractHorizonError(response: unknown): string | undefined {
+    const codes = (
+      response as {
+        result_codes?: { transaction?: string } & Record<string, unknown>;
+      } | null
+    )?.result_codes;
     if (!codes) {
       return undefined;
     }
@@ -247,12 +247,15 @@ export class TransactionStatusCheckerProcessor extends WorkerHost {
       return true;
     }
 
-    const status = (error as any)?.response?.status;
-    if (status === 429 || status >= 500) {
+    const status = (error as { response?: { status?: number } })?.response
+      ?.status;
+    if (status === 429 || (typeof status === 'number' && status >= 500)) {
       return true;
     }
 
-    const message = String((error as any)?.message ?? '').toLowerCase();
+    const message = String(
+      (error as { message?: unknown })?.message ?? '',
+    ).toLowerCase();
     return (
       message.includes('timeout') ||
       message.includes('rate limit') ||
@@ -494,7 +497,18 @@ export class TransactionStatusCheckerProcessor extends WorkerHost {
         return null;
       }
 
-      const invocation = (operation.func as any)?._value?._attributes;
+      // Reach into the XDR wrapper's internal fields, which the SDK's public
+      // types do not surface, to recover the invoked contract function + args.
+      const invocation = (
+        operation.func as unknown as {
+          _value?: {
+            _attributes?: {
+              functionName?: { toString(): string };
+              args?: unknown;
+            };
+          };
+        }
+      )?._value?._attributes;
       if (!invocation) {
         return null;
       }
@@ -507,7 +521,7 @@ export class TransactionStatusCheckerProcessor extends WorkerHost {
 
       const nativeArgs = args.map((arg) => {
         try {
-          return StellarSdk.scValToNative(arg as any);
+          return StellarSdk.scValToNative(arg as StellarSdk.xdr.ScVal);
         } catch {
           return undefined;
         }
