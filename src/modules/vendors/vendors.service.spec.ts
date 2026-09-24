@@ -1,9 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, NotFoundException, ForbiddenException, UnauthorizedException, ExecutionContext } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { VendorsService } from './vendors.service';
 import { VendorsController } from './vendors.controller';
 import { SupabaseService } from '../../database/supabase.client';
+import { VendorsRepository } from '../../database/repositories/vendors.repository';
 import { VendorRegistryContractClient } from '../../stellar/contracts/clients/vendor-registry.client';
 import { VendorType, VendorStatus } from './dto/vendor.dto';
 import { AdminGuard } from '../../common/guards/admin.guard';
@@ -14,6 +16,8 @@ describe('VendorsModule', () => {
   let mockSupabaseService: any;
   let mockVendorRegistryClient: any;
   let mockConfigService: any;
+  let mockVendorsRepository: any;
+  let mockCacheManager: any;
   let adminGuard: AdminGuard;
 
   const mockAdminWallet = 'GA3D5342W...ADMIN_WALLET_ADDRESS';
@@ -79,14 +83,30 @@ describe('VendorsModule', () => {
       }),
     };
 
+    // The methods under test read through supabaseService and the registry
+    // client; the repository and cache are wired only to satisfy DI.
+    mockVendorsRepository = {
+      findById: jest.fn(),
+      findAll: jest.fn(),
+      updateStatus: jest.fn(),
+    };
+
+    mockCacheManager = {
+      get: jest.fn(),
+      set: jest.fn(),
+      del: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [VendorsController],
       providers: [
         VendorsService,
         AdminGuard,
         { provide: SupabaseService, useValue: mockSupabaseService },
+        { provide: VendorsRepository, useValue: mockVendorsRepository },
         { provide: VendorRegistryContractClient, useValue: mockVendorRegistryClient },
         { provide: ConfigService, useValue: mockConfigService },
+        { provide: CACHE_MANAGER, useValue: mockCacheManager },
       ],
     }).compile();
 
