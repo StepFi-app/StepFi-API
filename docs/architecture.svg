@@ -11,7 +11,7 @@
   <!-- page -->
   <rect x="0" y="0" width="1000" height="660" rx="18" fill="#F8FAFC"/>
   <text x="40" y="46" font-size="27" font-weight="700" fill="#0F172A">StepFi — System Architecture</text>
-  <text x="40" y="70" font-size="14" fill="#475569">Reputation-based micro-credit for students & small vendors, settled on Stellar</text>
+  <text x="40" y="70" font-size="14" fill="#475569">Reputation-based micro-credit for students &amp; small vendors, settled on Stellar</text>
 
   <!-- docs badge -->
   <g filter="url(#soft)">
@@ -39,9 +39,9 @@
   </g>
   <text x="178" y="232" font-size="16" font-weight="700" fill="#1E3A8A" text-anchor="middle">📱 StepFi-App</text>
   <text x="178" y="255" font-size="12" fill="#334155" text-anchor="middle">Expo · React Native</text>
-  <text x="178" y="273" font-size="12" fill="#334155" text-anchor="middle">learner & sponsor mobile client</text>
+  <text x="178" y="273" font-size="12" fill="#334155" text-anchor="middle">learner &amp; sponsor mobile client</text>
   <text x="436" y="232" font-size="16" font-weight="700" fill="#1E3A8A" text-anchor="middle">🌐 StepFi-Web</text>
-  <text x="436" y="255" font-size="12" fill="#334155" text-anchor="middle">marketing site &</text>
+  <text x="436" y="255" font-size="12" fill="#334155" text-anchor="middle">marketing site &amp;</text>
   <text x="436" y="273" font-size="12" fill="#334155" text-anchor="middle">web dashboard</text>
 
   <!-- WALLETS -->
@@ -97,8 +97,8 @@
     <text x="843" y="570" text-anchor="middle">Parameters</text>
   </g>
   <g font-size="11" font-weight="400" fill="#475569">
-    <text x="155" y="592" text-anchor="middle">loans & repayment</text>
-    <text x="327" y="592" text-anchor="middle">score & tiers</text>
+    <text x="155" y="592" text-anchor="middle">loans &amp; repayment</text>
+    <text x="327" y="592" text-anchor="middle">score &amp; tiers</text>
     <text x="499" y="592" text-anchor="middle">sponsor funds</text>
     <text x="671" y="592" text-anchor="middle">verified merchants</text>
     <text x="843" y="592" text-anchor="middle">governance · multisig</text>
