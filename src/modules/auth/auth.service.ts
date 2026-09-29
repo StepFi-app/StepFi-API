@@ -8,7 +8,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes, randomUUID } from 'crypto';
-import { Keypair, StrKey } from 'stellar-sdk';
+import { Keypair, StrKey, Account, Operation, TransactionBuilder, Transaction, BASE_FEE } from 'stellar-sdk';
 import { SupabaseService } from '../../database/supabase.client';
 import { UsersRepository, UploadedAvatarFile } from '../../database/repositories/users.repository';
 import { NonceResponseDto } from './dto/nonce-response.dto';
@@ -32,6 +32,12 @@ const CHALLENGE_STATEMENT =
   'This message does not trigger any blockchain transaction.';
 const DEFAULT_NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015';
 export const LEGACY_RAW_SIGNATURES_SUNSET = '2026-10-31';
+
+// Name of the single manageData operation carried by the SEP-10-style
+// challenge transaction. Its value binds the transaction to the nonce row's
+// stored challenge hash, so a signed challenge can only ever authenticate the
+// exact nonce it was issued for.
+const CHALLENGE_DATA_NAME = 'stepfi_auth_challenge';
 
 interface StoredNonce {
   id: string;
@@ -155,6 +161,7 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + NONCE_EXPIRATION_SECONDS * 1000);
     const message = this.buildChallengeMessage({ wallet, nonce, issuedAt, expiresAt });
     const messageHash = createHash('sha256').update(message, 'utf8').digest('hex');
+    const challengeXdr = this.buildChallengeTransaction({ wallet, issuedAt, expiresAt, messageHash });
     const client = this.supabaseService.getServiceRoleClient();
     const { error } = await client.from('nonces').insert({
       wallet_address: wallet,
@@ -166,7 +173,7 @@ export class AuthService {
     if (error) {
       throw new InternalServerErrorException({ code: 'DATABASE_NONCE_INSERT_FAILED', message: 'Failed to generate nonce.' });
     }
-    return { nonce, expiresAt: expiresAt.toISOString(), message };
+    return { nonce, expiresAt: expiresAt.toISOString(), message, challengeXdr };
   }
 
   /**
@@ -236,10 +243,23 @@ export class AuthService {
     }
     try {
       const keypair = Keypair.fromPublicKey(dto.wallet);
-      const signatureBuffer = Buffer.from(dto.signature, 'base64');
       // The DTO default ('raw') is applied by the validation layer; the
       // service treats an absent value the same way for direct callers.
       const signatureType = dto.signatureType ?? 'raw';
+
+      if (signatureType === 'sep0010') {
+        // SEP-10-style scheme: the wallet signs a server-issued challenge
+        // TRANSACTION (not a message), so wallets that only expose
+        // stellar_signXDR (e.g. mobile Lobstr over WalletConnect) can still
+        // authenticate. The signature is carried inside the signed XDR.
+        this.verifySep0010Challenge(dto, nonceRecord as StoredNonce, keypair);
+        return;
+      }
+
+      if (!dto.signature) {
+        throw new UnauthorizedException({ code: 'AUTH_SIGNATURE_INVALID', message: 'Invalid signature.' });
+      }
+      const signatureBuffer = Buffer.from(dto.signature, 'base64');
 
       if (signatureType === 'raw') {
         // Legacy mobile scheme: signature over the bare nonce hex bytes.
@@ -265,6 +285,115 @@ export class AuthService {
       }
     } catch (err) {
       if (err instanceof UnauthorizedException) throw err;
+      throw new UnauthorizedException({ code: 'AUTH_SIGNATURE_INVALID', message: 'Invalid signature.' });
+    }
+  }
+
+  /**
+   * Builds the SEP-10-style challenge transaction the wallet must sign.
+   *
+   * Deviation from strict SEP-10: the transaction is server-ISSUED but not
+   * server-SIGNED, and its source is the user's own wallet with sequence 0
+   * (built on an Account seeded at "-1"). We do not run a server signing key;
+   * forgery/replay is instead prevented by the single-use nonce row, the
+   * stored `message_hash` binding carried in the manageData value, and the
+   * transaction timebounds. A `.build()`ed transaction with a source account
+   * of sequence 0 can never be submitted to the network, so this is a pure
+   * authentication artifact.
+   */
+  private buildChallengeTransaction(opts: {
+    wallet: string;
+    issuedAt: Date;
+    expiresAt: Date;
+    messageHash: string;
+  }): string {
+    // Account seeded at "-1" so the first (and only) built transaction has
+    // sequence 0 — asserted on verification.
+    const account = new Account(opts.wallet, '-1');
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.networkPassphrase,
+      timebounds: {
+        minTime: Math.floor(opts.issuedAt.getTime() / 1000),
+        maxTime: Math.floor(opts.expiresAt.getTime() / 1000),
+      },
+    })
+      .addOperation(
+        Operation.manageData({
+          name: CHALLENGE_DATA_NAME,
+          value: Buffer.from(opts.messageHash, 'hex'),
+        }),
+      )
+      .build();
+    return transaction.toXDR();
+  }
+
+  /**
+   * Verifies a signed SEP-10-style challenge transaction. Asserts the parsed
+   * transaction is exactly the challenge we issued for this nonce — same
+   * source wallet, sequence 0, a single `manageData` op whose value equals the
+   * stored challenge hash, valid (non-expired) timebounds — and that it carries
+   * a valid signature from the wallet over the transaction hash. The network
+   * passphrase is bound implicitly: the signature is over `tx.hash()`, which
+   * only matches when the client signed for this exact network.
+   */
+  private verifySep0010Challenge(dto: VerifyRequestDto, stored: StoredNonce, keypair: Keypair): void {
+    if (!dto.signedXdr) {
+      throw new UnauthorizedException({ code: 'AUTH_SIGNATURE_INVALID', message: 'Invalid signature.' });
+    }
+    if (!stored.message_hash) {
+      throw new UnauthorizedException({ code: 'AUTH_SIGNATURE_INVALID', message: 'Invalid signature.' });
+    }
+
+    let transaction: Transaction;
+    try {
+      transaction = new Transaction(dto.signedXdr, this.networkPassphrase);
+    } catch {
+      throw new UnauthorizedException({ code: 'AUTH_SIGNATURE_INVALID', message: 'Invalid signature.' });
+    }
+
+    if (transaction.source !== dto.wallet || transaction.sequence !== '0') {
+      throw new UnauthorizedException({
+        code: 'AUTH_CHALLENGE_MISMATCH',
+        message: 'Signed transaction does not match the issued challenge.',
+      });
+    }
+
+    if (transaction.operations.length !== 1) {
+      throw new UnauthorizedException({
+        code: 'AUTH_CHALLENGE_MISMATCH',
+        message: 'Signed transaction does not match the issued challenge.',
+      });
+    }
+    const [operation] = transaction.operations;
+    if (operation.type !== 'manageData' || operation.name !== CHALLENGE_DATA_NAME) {
+      throw new UnauthorizedException({
+        code: 'AUTH_CHALLENGE_MISMATCH',
+        message: 'Signed transaction does not match the issued challenge.',
+      });
+    }
+    const value = operation.value;
+    if (!value || Buffer.from(value).toString('hex') !== stored.message_hash) {
+      throw new UnauthorizedException({
+        code: 'AUTH_CHALLENGE_MISMATCH',
+        message: 'Signed transaction does not match the issued challenge.',
+      });
+    }
+
+    const timeBounds = transaction.timeBounds;
+    if (!timeBounds || Number(timeBounds.maxTime) * 1000 <= Date.now()) {
+      throw new UnauthorizedException({ code: 'AUTH_NONCE_EXPIRED', message: 'Challenge has expired.' });
+    }
+
+    const hash = transaction.hash();
+    const signed = transaction.signatures.some((sig) => {
+      try {
+        return keypair.verify(hash, sig.signature());
+      } catch {
+        return false;
+      }
+    });
+    if (!signed) {
       throw new UnauthorizedException({ code: 'AUTH_SIGNATURE_INVALID', message: 'Invalid signature.' });
     }
   }

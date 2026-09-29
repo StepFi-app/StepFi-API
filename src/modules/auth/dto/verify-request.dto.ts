@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, Matches, Length, IsOptional, IsIn, MaxLength } from 'class-validator';
+import { IsString, IsNotEmpty, Matches, Length, IsOptional, IsIn, MaxLength, ValidateIf } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 /**
@@ -43,24 +43,41 @@ export class VerifyRequestDto {
 
   @ApiProperty({
     description:
-      'Base64-encoded Ed25519 signature over the challenge message (or, for the deprecated raw scheme, over the nonce bytes)',
+      'Base64-encoded Ed25519 signature over the challenge message (or, for the deprecated raw scheme, over the nonce bytes). ' +
+      'Not used for signatureType sep0010, where the signature is carried inside signedXdr.',
     example: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    required: false,
   })
+  @ValidateIf((o: VerifyRequestDto) => o.signatureType !== 'sep0010')
   @IsString()
   @IsNotEmpty({ message: 'Signature is required' })
-  signature: string;
+  signature?: string;
 
   @ApiProperty({
     description:
-      "Signature scheme. 'sep0043' — browser wallets (SEP-53: SHA-256 of \"Stellar Signed Message:\\n\" + envelope). 'envelope' — native clients signing the canonical envelope with raw Ed25519. 'raw' — legacy, signature over the bare nonce hex (deprecated, flag-gated).",
+      "Signature scheme. 'sep0043' — browser wallets (SEP-53: SHA-256 of \"Stellar Signed Message:\\n\" + envelope). 'envelope' — native clients signing the canonical envelope with raw Ed25519. 'sep0010' — SEP-10-style challenge transaction, wallet signs the server-issued challengeXdr and returns it as signedXdr (works with transaction-only wallets such as mobile Lobstr). 'raw' — legacy, signature over the bare nonce hex (deprecated, flag-gated).",
     example: 'envelope',
     required: false,
-    enum: ['raw', 'sep0043', 'envelope'],
+    enum: ['raw', 'sep0043', 'envelope', 'sep0010'],
   })
   @IsOptional()
   @IsString()
-  @IsIn(['raw', 'sep0043', 'envelope'])
-  signatureType?: 'raw' | 'sep0043' | 'envelope' = 'raw';
+  @IsIn(['raw', 'sep0043', 'envelope', 'sep0010'])
+  signatureType?: 'raw' | 'sep0043' | 'envelope' | 'sep0010' = 'raw';
+
+  @ApiProperty({
+    description:
+      'Base64-encoded signed challenge transaction envelope XDR (required for signatureType sep0010). ' +
+      'This is the challengeXdr from POST /auth/nonce after signing it with the wallet. The server ' +
+      'verifies the transaction matches the issued challenge and carries a valid wallet signature.',
+    example: 'AAAAAgAAAAD...==',
+    required: false,
+  })
+  @ValidateIf((o: VerifyRequestDto) => o.signatureType === 'sep0010')
+  @IsString()
+  @IsNotEmpty({ message: 'Signed transaction is required for sep0010' })
+  @MaxLength(8192, { message: 'Signed transaction must be at most 8192 characters' })
+  signedXdr?: string;
 
   @ApiProperty({
     description:

@@ -9,10 +9,23 @@ import { UsersRepository } from '../../../../src/database/repositories/users.rep
 import { AuditService } from '../../../../src/modules/admin/audit.service';
 import { VerifyRequestDto } from '../../../../src/modules/auth/dto/verify-request.dto';
 
-// Mock Stellar SDK to avoid real crypto operations in unit tests
+// Mock Stellar SDK to avoid real crypto operations in unit tests.
+// The message-scheme tests only exercise Keypair/StrKey; the SEP-10 challenge
+// builder needs Account/Operation/TransactionBuilder/BASE_FEE so generateNonce
+// can produce a (mock) challenge XDR without real SDK crypto. Real-SDK SEP-10
+// verification is covered in auth.service.sep0010.spec.ts (separate module
+// registry, no mock).
 jest.mock('stellar-sdk', () => ({
   Keypair: { fromPublicKey: jest.fn() },
   StrKey: { isValidEd25519PublicKey: jest.fn().mockReturnValue(true) },
+  Account: jest.fn(),
+  BASE_FEE: '100',
+  Operation: { manageData: jest.fn(() => ({ type: 'manageData' })) },
+  TransactionBuilder: jest.fn(() => ({
+    addOperation: jest.fn().mockReturnThis(),
+    build: jest.fn(() => ({ toXDR: () => 'MOCK_CHALLENGE_XDR' })),
+  })),
+  Transaction: jest.fn(),
 }));
 
 import { Keypair, StrKey } from 'stellar-sdk';
@@ -211,6 +224,7 @@ describe('AuthService', () => {
       expect(result).toHaveProperty('nonce');
       expect(result).toHaveProperty('expiresAt');
       expect(result).toHaveProperty('message');
+      expect(result).toHaveProperty('challengeXdr');
       expect(typeof result.nonce).toBe('string');
       expect(result.nonce).toHaveLength(64);
       expect(/^[a-f0-9]+$/.test(result.nonce)).toBe(true);
